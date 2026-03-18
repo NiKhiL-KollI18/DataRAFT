@@ -5,7 +5,7 @@
 struct FileMeta {
     //file info
     uint64_t file_size_;
-    char relative_path[512];
+    char relative_path_[512];
     char extension_[16];
 
     //file integrity
@@ -28,8 +28,8 @@ struct DataManifest {
     bool is_batch_directory_;
 
     char folder_name_[256];
-    uint64_t total_folder_size;
-    uint32_t total_file_count;
+    uint64_t total_folder_size_;
+    uint32_t total_file_count_;
 
     char sender_name_[64];
     bool is_encrypted_;
