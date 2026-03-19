@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 4.1)
+cmake_minimum_required(VERSION 3.20)
 project(stackdeck_filesharer)
 
 set(CMAKE_POLICY_VERSION_MINIMUM "3.5" CACHE STRING "" FORCE)
@@ -10,6 +10,8 @@ set(OPENSSL_ROOT_DIR "C:/Program Files/OpenSSL-Win64")
 
 set(OPENSSL_CRYPTO_LIBRARY "C:/Program Files/OpenSSL-Win64/lib/VC/x64/MD/libcrypto.lib" CACHE FILEPATH "" FORCE)
 set(OPENSSL_SSL_LIBRARY "C:/Program Files/OpenSSL-Win64/lib/VC/x64/MD/libssl.lib" CACHE FILEPATH "" FORCE)
+
+find_package(OpenSSL REQUIRED)
 
 include(FetchContent)
 set(NO_TESTS ON CACHE BOOL "" FORCE)
@@ -30,4 +32,8 @@ add_executable(${PROJECT_NAME}
         src/main.cpp
 )
 
-target_link_libraries(${PROJECT_NAME} PRIVATE datachannel ws2_32)
+target_include_directories(${PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(${PROJECT_NAME} PRIVATE datachannel ws2_32 OpenSSL::SSL OpenSSL::Crypto)

@@ -3,7 +3,9 @@
 #include <string>
 #include<vector>
 
-#include "include/protocol.h"
+#include "../include/protocol.h"
+
+struct FileMeta;
 
 namespace file_helper {
     void extract_metadata(const std::string &filepath , FileMeta& metadata);
@@ -20,5 +22,4 @@ namespace file_helper {
 
     void decrypt_chunk(std::vector<char>& chunk , const std::string &decryption_key);
     //open to ideas
-
 }
