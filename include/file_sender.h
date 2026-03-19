@@ -3,7 +3,7 @@
 #include <fstream>
 
 #include "protocol.h"
-#include "helpers/file_helper.h"
+#include "file_helper.h"
 #include "rtc/peerconnection.hpp"
 
 constexpr int MAX_BUFFER_SIZE = 128 * 1024;

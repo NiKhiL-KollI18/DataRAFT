@@ -3,7 +3,7 @@
 #include <string>
 #include<vector>
 
-#include "../include/protocol.h"
+#include "protocol.h"
 
 struct FileMeta;
 
