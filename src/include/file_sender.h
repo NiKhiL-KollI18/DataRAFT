@@ -15,14 +15,13 @@ private:
     FileMeta metadata{};
 
     std::ifstream infile_;
-    std::ofstream outfile_;
 
     void send_metadata(FileMeta &metadata);
 
 public:
     FileTransfer(const std::string &filepath) {
         filepath_ = filepath;
-        extract_metadata(filepath_ , metadata);
+        file_helper::extract_metadata(filepath_ , metadata);
     }
 
     ~FileTransfer();

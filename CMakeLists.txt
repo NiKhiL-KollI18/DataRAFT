@@ -8,8 +8,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(OPENSSL_ROOT_DIR "C:/Program Files/OpenSSL-Win64")
 
-set(OPENSSL_CRYPTO_LIBRARY "C:/Program Files/OpenSSL-Win64/lib/libcrypto.lib" CACHE FILEPATH "" FORCE)
-set(OPENSSL_SSL_LIBRARY "C:/Program Files/OpenSSL-Win64/lib/libssl.lib" CACHE FILEPATH "" FORCE)
+set(OPENSSL_CRYPTO_LIBRARY "C:/Program Files/OpenSSL-Win64/lib/VC/x64/MD/libcrypto.lib" CACHE FILEPATH "" FORCE)
+set(OPENSSL_SSL_LIBRARY "C:/Program Files/OpenSSL-Win64/lib/VC/x64/MD/libssl.lib" CACHE FILEPATH "" FORCE)
 
 include(FetchContent)
 set(NO_TESTS ON CACHE BOOL "" FORCE)
