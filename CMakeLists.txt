@@ -23,13 +23,35 @@ FetchContent_Declare(
         GIT_TAG        v0.21.2
 )
 
+FetchContent_Declare(
+        zstd
+        GIT_REPOSITORY https://github.com/facebook/zstd.git
+        GIT_TAG v1.5.6
+        SOURCE_SUBDIR build/cmake
+)
+
+set(ZSTD_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(ZSTD_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(ZSTD_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+set(ZSTD_BUILD_STATIC ON CACHE BOOL "" FORCE)
+
+
+
 message(STATUS "Downloading libdatachannel...")
 FetchContent_MakeAvailable(libdatachannel)
+message(STATUS "Downloading zstd...")
+FetchContent_MakeAvailable(zstd)
 
 include_directories(src)
 
 add_executable(${PROJECT_NAME}
-        src/main.cpp
+        main.cpp
+        src/helper_impt/file_helper.cpp
+        src/helper_impt/stream_encryptor.cpp
+        src/helper_impt/stream_decryptor.cpp
+        src/helper_impt/stream_compression.cpp
+        src/helper_impt/stream_decompresser.cpp
+        src/helper_impt/stream_hasher.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -37,4 +59,11 @@ target_include_directories(${PROJECT_NAME} PRIVATE
         ${CMAKE_SOURCE_DIR}/include/helpers
 )
 
-target_link_libraries(${PROJECT_NAME} PRIVATE datachannel ws2_32 OpenSSL::SSL OpenSSL::Crypto)
+target_link_libraries(${PROJECT_NAME}
+        PRIVATE
+        datachannel
+        ws2_32
+        OpenSSL::SSL
+        OpenSSL::Crypto
+        libzstd_static
+)

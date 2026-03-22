@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fstream>
+#include <string>
 
 #include "protocol.h"
 #include "file_helper.h"
@@ -9,7 +10,7 @@
 constexpr int MAX_BUFFER_SIZE = 128 * 1024;
 constexpr int BUCKET_SIZE = 32 * 1024;
 
-class FileTransfer {
+class FileSender {
 private:
     std::string filepath_;
     FileMeta metadata{};
@@ -19,12 +20,12 @@ private:
     void send_metadata(FileMeta &metadata);
 
 public:
-    FileTransfer(const std::string &filepath) {
+    FileSender(const std::string &filepath) {
         filepath_ = filepath;
         file_helper::extract_metadata(filepath_ , metadata);
     }
 
-    ~FileTransfer();
+    ~FileSender();
 
     void send_metadata(rtc::DataChannel &data_channel);
 

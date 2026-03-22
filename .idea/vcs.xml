@@ -8,5 +8,6 @@
     <mapping directory="$PROJECT_DIR$/cmake-build-debug/_deps/libdatachannel-src/deps/libsrtp" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/cmake-build-debug/_deps/libdatachannel-src/deps/plog" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/cmake-build-debug/_deps/libdatachannel-src/deps/usrsctp" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-debug/_deps/zstd-src" vcs="Git" />
   </component>
 </project>

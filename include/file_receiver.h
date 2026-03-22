@@ -1,6 +1,7 @@
 #pragma once
 #include <fstream>
 #include <string>
+#include <vector>
 
 #include "protocol.h"
 #include "rtc/rtc.hpp"

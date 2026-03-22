@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#pragma pack(push , 1)
+
 struct FileMeta {
     //file info
     uint64_t file_size_;
@@ -10,10 +12,11 @@ struct FileMeta {
 
     //file integrity
     char checksum_sha256_[65];
+    bool is_compressed_;
 
     //feature flags
-    bool is_compressed_;
     bool is_transfer_complete_;
+    char tag[16];
 
     //UX & OS specific
     uint32_t file_permissions_;
@@ -34,4 +37,9 @@ struct DataManifest {
     char sender_name_[64];
     bool is_encrypted_;
     char password_hash_sha256_[65];
+
+    uint8_t crypto_salt_[16];
+    uint8_t crypto_iv_[12];
 };
+
+#pragma pack(pop)
