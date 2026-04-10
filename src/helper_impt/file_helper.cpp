@@ -24,107 +24,51 @@ namespace file_helper {
         cout << "\r[processed : ]" << processed_size << " / " << total_size << flush;
     };
 
-    void extract_metadata(const string &filepath, FileMeta &metadata , const string& sha256hash , bool is_transfer_complete) {
+    void extract_metadata(const string &filepath, const string &base_target_path, FileMeta &metadata , const string& sha256hash , bool is_transfer_complete) {
         namespace fs = std::filesystem;
-        fs::path file_path(filepath);
+        fs::path file_p(filepath);
+        fs::path target_p(base_target_path);
 
         memset(&metadata , 0 , sizeof(FileMeta));
 
         //file info
-        metadata.file_size_ = fs::file_size(file_path);
+        metadata.file_size_ = fs::file_size(file_p);
 
-        string relative_path = sanitize_filename(filepath);
-        strncpy(metadata.relative_path_ , relative_path.c_str() ,
+        // --- THE SMART PATHING LOGIC ---
+        string raw_relative_path;
+
+        if (fs::is_regular_file(target_p)) {
+            // Rule 1: Single file. Strip everything, keep only the filename.
+            raw_relative_path = file_p.filename().string();
+        } else {
+            // Rule 2: Directory. Keep everything from the target root folder downwards.
+            fs::path relative_to_root = fs::relative(file_p, target_p);
+
+            // Re-attach the target folder's name so it sits inside a root folder on the receiver end
+            fs::path final_path = target_p.filename() / relative_to_root;
+
+            // lexically_normal() resolves any weird "." or ".." and generic_string forces forward slashes '/'
+            raw_relative_path = final_path.lexically_normal().generic_string();
+        }
+
+        string safe_relative_path = sanitize_filename(raw_relative_path);
+        strncpy(metadata.relative_path_ , safe_relative_path.c_str() ,
             sizeof(metadata.relative_path_) - 1);
 
-        string extension = file_path.extension().string();
+        string extension = file_p.extension().string();
         strncpy(metadata.extension_, extension.c_str(), sizeof(metadata.extension_) - 1);
 
         //file integrity
         string checksum = sha256hash;
         strncpy(metadata.checksum_sha256_ , checksum.c_str() , sizeof(metadata.checksum_sha256_) - 1);
 
-        metadata.is_compressed_ = is_compressible(filepath);
+        metadata.is_compressed_ = is_compressible(extension); // Fixed to use extension!
 
         //feature flags
         metadata.is_transfer_complete_ = is_transfer_complete;
 
-        metadata.file_permissions_ = static_cast<uint64_t>(fs::status(filepath).permissions());
+        metadata.file_permissions_ = static_cast<uint64_t>(fs::status(file_p).permissions());
     }
-
-    // string calculate_sha256(const string &filepath , const function<void(size_t , size_t)> &progress_callback) {
-    //     HANDLE h_file = CreateFile(filepath.c_str() ,GENERIC_READ ,
-    //         FILE_SHARE_READ ,nullptr , OPEN_EXISTING ,
-    //         FILE_ATTRIBUTE_NORMAL , nullptr);
-    //     if (h_file == INVALID_HANDLE_VALUE) return "Error : could not open the file.";
-    //
-    //     LARGE_INTEGER file_size;
-    //     GetFileSizeEx(h_file , &file_size);
-    //     size_t total_bytes = file_size.QuadPart;
-    //
-    //     HANDLE h_map = CreateFileMappingA(h_file , nullptr ,
-    //         PAGE_READONLY , 0 , 0 , nullptr);
-    //
-    //     if (h_map == nullptr) {
-    //         CloseHandle(h_file);
-    //         return "Error : could not create file mapping.";
-    //     }
-    //
-    //     EVP_MD_CTX* context = EVP_MD_CTX_new();
-    //     EVP_DigestInit_ex(context , EVP_sha256() , nullptr);
-    //
-    //     size_t bytes_remaining = total_bytes;
-    //     unsigned long long last_callback_mark = -1;
-    //
-    //     unsigned long long offset = 0;
-    //
-    //     while (bytes_remaining > 0) {
-    //         size_t bytes_to_map = min(SHA256_BUFFER_SIZE , bytes_remaining);
-    //
-    //         DWORD offset_high = (offset >> 32) & 0xFFFFFFFF;
-    //         DWORD offset_low = offset & 0xFFFFFFFF;
-    //
-    //         const char* mapped_data = static_cast<const char*>(MapViewOfFile(h_map , FILE_MAP_READ ,
-    //             offset_high , offset_low , bytes_to_map));
-    //
-    //         if (mapped_data == nullptr) {
-    //             EVP_MD_CTX_free(context);
-    //             CloseHandle(h_map);
-    //             CloseHandle(h_file);
-    //             return "Error : error mapping at offset " + to_string(offset);
-    //         }
-    //         EVP_DigestUpdate(context , mapped_data , bytes_to_map);
-    //         UnmapViewOfFile(mapped_data);
-    //
-    //         offset += bytes_to_map;
-    //         bytes_remaining -= bytes_to_map;
-    //
-    //         unsigned long long current_gb = offset / (1024 * 1024 * 1024);
-    //         if (current_gb != last_callback_mark) {
-    //             if (progress_callback) {
-    //                 progress_callback(offset , total_bytes); //report progress
-    //             }
-    //             last_callback_mark = current_gb;
-    //         }
-    //     }
-    //
-    //     if (progress_callback) progress_callback(total_bytes, total_bytes);
-    //
-    //     unsigned char hash_bytes[EVP_MAX_MD_SIZE];
-    //     unsigned int hash_length = 0;
-    //     EVP_DigestFinal_ex(context , hash_bytes, &hash_length);
-    //
-    //     EVP_MD_CTX_free(context);
-    //     CloseHandle(h_file);
-    //     CloseHandle(h_map);
-    //
-    //     stringstream ss;
-    //     for (int i = 0; i < hash_length; i++) {
-    //         ss << hex << setw(2) << setfill('0') << static_cast<int>(hash_bytes[i]);
-    //     }
-    //
-    //     return ss.str();
-    // }
 
     string sanitize_filename(const string &filepath) {
         namespace fs = std::filesystem;
@@ -165,7 +109,7 @@ namespace file_helper {
         return format("{:.2f} {}" , size , units[unit_idx]);
     }
 
-    vector<unsigned char>derive_key(string& password , const vector<unsigned char>& salt) {
+    vector<unsigned char>derive_key(const string& password  , const vector<unsigned char>& salt) {
         vector<unsigned char> key(32);
 
         constexpr int iterations = 100000;
@@ -229,9 +173,14 @@ namespace file_helper {
             uint32_t file_count = 0;
 
             for (const auto& entry : fs::recursive_directory_iterator(p)) {
-                total_size += fs::file_size(entry);
-                file_count++;
+                // THE FIX: You cannot get file_size() of a directory, only regular files!
+                if (entry.is_regular_file()) {
+                    total_size += fs::file_size(entry);
+                    file_count++;
+                }
             }
+            data_manifest.total_folder_size_ = total_size;
+            data_manifest.total_file_count_ = file_count;
         }
         else {
             //single file

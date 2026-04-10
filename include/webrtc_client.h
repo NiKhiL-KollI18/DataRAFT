@@ -2,8 +2,8 @@
 
 #include <atomic>
 #include <memory>
-#include<string>
-
+#include <string>
+#include <future>
 #include <rtc/rtc.hpp>
 
 
@@ -13,26 +13,35 @@ private:
     //client state
     bool is_sender_;
     std::string filepath_;
+    std::string room_id_;
+    std::string signaling_url_;
 
-    //WebRTC pointers
+    //WebRTC & Network pointers
     std::shared_ptr<rtc::PeerConnection> peer_connection_;
     std::shared_ptr<rtc::DataChannel> data_channel_;
+    std::shared_ptr<rtc::WebSocket> websocket_;
+
+    //thread-blocking promise to communicate with main.cpp
+    std::promise<std::string> room_promise_;
+    std::promise<void> connection_promise_;
 
     //internal logic
+    void setup_signaling();
     void setup_webrtc();
     void setup_sender();
     void setup_receiver();
+    void handle_signaling_message(const std::string& message);
 
 public:
-    WebRTCClient(bool is_sender , const std::string &filepath = "") {
-        is_sender_ = is_sender;
-        filepath_ = filepath;
-    }
-
-    std::atomic<bool> is_running_{true};
+    WebRTCClient(const std::string &signaling_url);
 
     ~WebRTCClient();
 
-    //entry point
-    void start();
+    std::string create_room();
+
+    void join_room(const std::string& room_id);
+
+    void wait_for_peer_connection();
+
+    std::shared_ptr<rtc::DataChannel> get_data_channel();
 };

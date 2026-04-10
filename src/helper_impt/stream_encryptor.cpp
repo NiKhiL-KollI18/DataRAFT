@@ -90,7 +90,7 @@ namespace file_helper {
         }
 
         vector<unsigned char> tag(16);
-        if (EVP_CIPHER_CTX_ctrl(cipher_ctx , EVP_CTRL_GCM_SET_TAG , static_cast<int>(tag.size()) , tag.data()) != 1) {
+        if (EVP_CIPHER_CTX_ctrl(cipher_ctx , EVP_CTRL_GCM_GET_TAG , static_cast<int>(tag.size()) , tag.data()) != 1) {
             throw runtime_error("Error : Failed to get AES-GCM auth tag");
         }
 

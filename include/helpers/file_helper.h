@@ -13,14 +13,14 @@ namespace file_helper {
                 std::vector<unsigned char> salt;
         };
 
-        void extract_metadata(const std::string &filepath , FileMeta& metadata , const std::string &sha256hash = "" , bool is_transfer_completed = false);
+        void extract_metadata(const std::string &filepath , const std::string &base_target_path , FileMeta& metadata , const std::string &sha256hash = "" , bool is_transfer_completed = false);
 
         void extract_transfer_ack(const std::string &filepath , TransferAck& response , bool accept_offer = true);
 
         void create_data_manifest(DataManifest& data_manifest , const std::string &filepath , bool is_encrypted ,
-                const std::string &password_hash ,
-                const std::vector<unsigned char>& salt ,
-                const std::vector<unsigned char>& iv);
+                const std::string &password_hash = "",
+                const std::vector<unsigned char>& salt  = {},
+                const std::vector<unsigned char>& iv = {});
 
         std::string calculate_sha256(const std::string &filepath , const std::function<void(size_t , size_t)> &progress_callback);
 
