@@ -71,8 +71,9 @@ add_executable(${PROJECT_NAME}
         src/helper_impt/stream_decompresser.cpp
         src/helper_impt/stream_hasher.cpp
         src/impl/webrtc_client.cpp
-        src/impl/sender.cpp
-        src/impl/receiver.cpp
+        src/impl/sender/sender.cpp
+        src/impl/receiver/receiver.cpp
+        src/impl/sender/producer.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE

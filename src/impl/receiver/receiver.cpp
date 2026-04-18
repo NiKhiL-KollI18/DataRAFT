@@ -51,7 +51,24 @@ void FileReceiver::start_receiving() {
                     {
                         vector<char> chunk(reinterpret_cast<const char*>(raw_data.data()) ,
                             reinterpret_cast<const char*>(raw_data.data()) + raw_data.size());
-                        process_data_chunks(std::move(chunk));
+
+                        //extract routing footer flag
+                        uint8_t footer_flag = static_cast<uint8_t>(chunk.back());
+                        chunk.pop_back();
+
+                        if (footer_flag == 0x00) {
+                            // Standard Data packet
+                            process_data_chunks(std::move(chunk));
+                        }
+                        else if (footer_flag == 0x01) {
+                            //EOF Cryptographic Receipt Payload
+                            cout << "Found the EOF Footer" << endl;
+                            rtc::binary receipt_data(
+                                reinterpret_cast<const std::byte*>(chunk.data()) ,
+                                reinterpret_cast<const std::byte*>(chunk.data()) + chunk.size()
+                                );
+                            verify_and_finalize(receipt_data);
+                        }
                     }
                     break;
 
@@ -197,14 +214,14 @@ void FileReceiver::process_data_chunks(vector<char> &&chunk) {
 
         bytes_processed_count_ += chunk.size();
 
-        if (bytes_processed_count_ >= last_significant_point_size_ + 100 * 1024 * 1024) {
-            cout << "\r Received : " << bytes_processed_count_ / (1024 * 1024) << "MiB" << flush;
+        if (bytes_processed_count_ >= last_significant_point_size_ + 10 * 1024 * 1024) {
+            cout << "\r Received : " << bytes_processed_count_ / (1024 * 1024) << "MB" << flush;
             last_significant_point_size_ = bytes_processed_count_;
         }
 
-        if (bytes_processed_count_ >= metadata_.file_size_) {
-            current_state_ = ReceiverState::AWAITING_CONFIRMATION;
-        }
+        // if (bytes_processed_count_ >= metadata_.file_size_) {
+        //     current_state_ = ReceiverState::AWAITING_CONFIRMATION;
+        // }
 
     } catch (const std::exception& e) {
         cout << "\n[Receiver] Pipeline Error during data processing : " << e.what() << endl;

@@ -10,7 +10,7 @@
 #include<queue>
 
 constexpr int MAX_QUEUE_SIZE = 16 * 1024 * 1024; //16MiB
-constexpr int BUCKET_SIZE = 32 * 1024; //32KiB
+constexpr int BUCKET_SIZE = (32 * 1024) - 1; //32KB - 1 , to add footer at the end
 
 class Sender {
 private:
