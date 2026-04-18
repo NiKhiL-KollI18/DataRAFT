@@ -2,13 +2,5 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/cmake-build-debug/_deps/cli11-src" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/cmake-build-debug/_deps/libdatachannel-src" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/cmake-build-debug/_deps/libdatachannel-src/deps/json" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/cmake-build-debug/_deps/libdatachannel-src/deps/libjuice" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/cmake-build-debug/_deps/libdatachannel-src/deps/libsrtp" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/cmake-build-debug/_deps/libdatachannel-src/deps/plog" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/cmake-build-debug/_deps/libdatachannel-src/deps/usrsctp" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/cmake-build-debug/_deps/zstd-src" vcs="Git" />
   </component>
 </project>
