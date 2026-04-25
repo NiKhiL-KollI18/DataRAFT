@@ -24,6 +24,21 @@ namespace file_helper {
         cout << "\r[processed : ]" << processed_size << " / " << total_size << flush;
     };
 
+    std::string to_windows_long_path(const string &standard_filepath) {
+        std::filesystem::path fs_path = std::filesystem::absolute(standard_filepath).lexically_normal();
+        std::string abs_path = fs_path.string();
+
+        std::replace(abs_path.begin() , abs_path.end() , '/' , '\\');
+
+        string magic_prefix = "\\\\?\\";
+
+        if (abs_path.rfind(magic_prefix , 0) == 0) {
+            return abs_path;
+        }
+
+        return magic_prefix + abs_path;
+    }
+
     void extract_metadata(const string &filepath, const string &base_target_path, FileMeta &metadata , const string& sha256hash , bool is_transfer_complete) {
         namespace fs = std::filesystem;
         fs::path file_p(filepath);

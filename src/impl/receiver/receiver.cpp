@@ -154,7 +154,11 @@ void FileReceiver::process_metadata(const binary &data) {
 
     memcpy(&metadata_ , data.data() , sizeof(FileMeta));
 
-    current_filepath_ = base_download_path_ + "/" + string(metadata_.relative_path_); //append to base download path
+    // 1. Calculate the standard target path
+    string raw_target_path = base_download_path_ + "/" + string(metadata_.relative_path_);
+
+    // 2. ARMOR IT: Convert to a Windows Long Path
+    current_filepath_ = file_helper::to_windows_long_path(raw_target_path);
 
     try {
         fs::path target_path(current_filepath_);
@@ -185,7 +189,6 @@ void FileReceiver::process_metadata(const binary &data) {
         send_ack(false);
         return;
     }
-
 
     bytes_processed_count_ = resume_pos;
 

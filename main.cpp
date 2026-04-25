@@ -69,22 +69,29 @@ int main(int argc , char** argv) {
             // ==========================================
             std::queue<std::string> pending_files;
             std::string base_directory;
-            fs::path target_fs(target_path);
+
+            // 1. Force absolute path and normalize ALL slashes to OS standard
+            fs::path target_fs = fs::absolute(target_path).lexically_normal();
+
+            // 2. Physically strip trailing slashes to guarantee exact parent calculation
+            std::string path_str = target_fs.string();
+            while (!path_str.empty() && (path_str.back() == '/' || path_str.back() == '\\')) {
+                path_str.pop_back();
+            }
+            target_fs = fs::path(path_str);
 
             if (!fs::exists(target_fs)) {
                 throw std::runtime_error("Target path does not exist: " + target_path);
             }
 
             if (fs::is_regular_file(target_fs)) {
-                // It's a single file
+                // Single File
                 pending_files.push(target_fs.string());
                 base_directory = target_fs.parent_path().string();
-                if (base_directory.empty()) base_directory = ".";
             }
             else if (fs::is_directory(target_fs)) {
-                // It's a directory: recursively grab all files
+                // Directory: The parent of TestNastyFolder is exactly testingIN
                 base_directory = target_fs.parent_path().string();
-                if (base_directory.empty()) base_directory = ".";
 
                 for (const auto& entry : fs::recursive_directory_iterator(target_fs)) {
                     if (fs::is_regular_file(entry.status())) {
@@ -92,6 +99,8 @@ int main(int argc , char** argv) {
                     }
                 }
             }
+
+            if (base_directory.empty()) base_directory = ".";
 
             if (pending_files.empty()) {
                 throw std::runtime_error("No files found to send in the specified path.");

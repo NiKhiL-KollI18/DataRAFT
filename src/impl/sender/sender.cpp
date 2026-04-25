@@ -19,9 +19,12 @@ Sender::Sender(const queue<string> &files, const string &base_dir,
     current_filepath_ = pending_files_.front();
     pending_files_.pop();
 
-    infile_.open(current_filepath_ , ios::binary);
+    // ARMOR IT before opening
+    string safe_read_path = file_helper::to_windows_long_path(current_filepath_);
+
+    infile_.open(safe_read_path , ios::binary);
     if (!infile_.is_open()) {
-        throw runtime_error("Fatal Error : Cannot open the file ->" + current_filepath_);
+        throw runtime_error("Fatal Error : Cannot open the file ->" + safe_read_path);
     }
 
     hasher_.emplace();
@@ -39,6 +42,7 @@ Sender::Sender(const queue<string> &files, const string &base_dir,
     }
 
     // Pass base_directory_ so the file_helper can calculate relative folder structures!
+    // Notice we use the normal current_filepath_ here so the headers stay clean!
     file_helper::extract_metadata(current_filepath_ , base_directory_ , metadata_, "", false);
 
     if (metadata_.is_compressed_) {
@@ -120,15 +124,18 @@ void Sender::start_sending() {
                             current_filepath_ = pending_files_.front();
                             pending_files_.pop();
 
-                            infile_.open(current_filepath_, ios::binary);
+                            // ARMOR IT before opening
+                            string safe_read_path = file_helper::to_windows_long_path(current_filepath_);
+
+                            infile_.open(safe_read_path, ios::binary);
                             if (!infile_.is_open()) {
-                                cout << "[Fatal] Cannot open next file in batch: " << current_filepath_ << endl;
+                                cout << "[Fatal] Cannot open next file in batch: " << safe_read_path << endl;
                                 current_state_ = SenderState::DONE;
                                 if (on_transfer_complete_) on_transfer_complete_();
                                 return;
                             }
 
-                            // 2. Extract new metadata
+                            // 2. Extract new metadata (using normal path)
                             memset(&metadata_, 0, sizeof(FileMeta));
                             file_helper::extract_metadata(current_filepath_, base_directory_, metadata_, "", false);
 
@@ -149,11 +156,6 @@ void Sender::start_sending() {
                             current_state_ = SenderState::DONE;
                             if (on_transfer_complete_) on_transfer_complete_();
                         }
-                    }
-                    else {
-                        cout << "[Sender] Final ACK rejected! Receiver reported a checksum or decryption failure." << endl;
-                        current_state_ = SenderState::DONE;
-                        if (on_transfer_complete_) on_transfer_complete_();
                     }
                 }
             }

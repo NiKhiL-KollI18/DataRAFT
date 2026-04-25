@@ -13,6 +13,8 @@ namespace file_helper {
                 std::vector<unsigned char> salt;
         };
 
+        std::string to_windows_long_path(const std::string &standard_filepath);
+
         void extract_metadata(const std::string &filepath , const std::string &base_target_path , FileMeta& metadata , const std::string &sha256hash = "" , bool is_transfer_completed = false);
 
         void extract_transfer_ack(const std::string &filepath , TransferAck& response , bool accept_offer = true);
