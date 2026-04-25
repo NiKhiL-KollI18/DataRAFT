@@ -135,7 +135,7 @@ void Sender::start_sending() {
                             if (metadata_.is_compressed_) compressor_.emplace();
                             else compressor_.reset();
 
-                            hasher_.reset();
+                            hasher_.emplace();
 
                             cout << "[Sender] Loading next file in batch: " << current_filepath_ << endl;
 
