@@ -15,7 +15,11 @@ constexpr int BUCKET_SIZE = (32 * 1024) - 1; //32KB - 1 , to add footer at the e
 class Sender {
 private:
     //state & file details
-    std::string filepath_;
+    std::string base_directory_;
+    std::string current_filepath_;
+    std::queue<std::string> pending_files_;
+    uint32_t total_files_in_batch_ = 0;
+
     std::string password_;
     std::ifstream infile_;
     FileMeta metadata_{};
@@ -58,7 +62,9 @@ private:
     void producer();
 
 public:
-    Sender(const std::string &filepath ,const std::shared_ptr<rtc::DataChannel> &data_channel , bool is_encrypted , const std::string &password , std::function<void()> on_complete);
+    Sender(const std::queue<std::string> &files, const std::string &base_dir,
+           const std::shared_ptr<rtc::DataChannel> &data_channel,
+           bool is_encrypted, const std::string &password, std::function<void()> on_complete);
 
     ~Sender();
 

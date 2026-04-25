@@ -1,5 +1,7 @@
 #include <iostream>
 #include <chrono>
+#include <filesystem>
+#include <queue>
 
 #include "CLI11.hpp"
 
@@ -8,6 +10,7 @@
 #include "sender.h"
 
 using namespace std;
+namespace fs = std::filesystem;
 
 std::atomic<bool> is_running_{true};
 
@@ -60,8 +63,46 @@ int main(int argc , char** argv) {
     try {
         if (send_cmd->parsed()) {
             cout << "[DataRAFT] Preparing to send : " << target_path << endl;
-            string password;
 
+            // ==========================================
+            // PHASE 2: QUEUE BUILDING & PATH RESOLUTION
+            // ==========================================
+            std::queue<std::string> pending_files;
+            std::string base_directory;
+            fs::path target_fs(target_path);
+
+            if (!fs::exists(target_fs)) {
+                throw std::runtime_error("Target path does not exist: " + target_path);
+            }
+
+            if (fs::is_regular_file(target_fs)) {
+                // It's a single file
+                pending_files.push(target_fs.string());
+                base_directory = target_fs.parent_path().string();
+                if (base_directory.empty()) base_directory = ".";
+            }
+            else if (fs::is_directory(target_fs)) {
+                // It's a directory: recursively grab all files
+                base_directory = target_fs.parent_path().string();
+                if (base_directory.empty()) base_directory = ".";
+
+                for (const auto& entry : fs::recursive_directory_iterator(target_fs)) {
+                    if (fs::is_regular_file(entry.status())) {
+                        pending_files.push(entry.path().string());
+                    }
+                }
+            }
+
+            if (pending_files.empty()) {
+                throw std::runtime_error("No files found to send in the specified path.");
+            }
+
+            cout << "[DataRAFT] Found " << pending_files.size() << " file(s) to transfer." << endl;
+
+            // ==========================================
+            // PROCEED WITH WEBRTC HANDSHAKE
+            // ==========================================
+            string password;
             if (is_secure) {
                 password = prompt_for_password();
             }
@@ -75,13 +116,14 @@ int main(int argc , char** argv) {
             cout << "raft receive " << generated_room_code << endl;
             cout << "\n==============================================" << endl;
 
-            // Block until receiver has connected...
+            // Block until the receiver has connected...
 
             webrtc_client_.wait_for_peer_connection();
             auto data_channel_ = webrtc_client_.get_data_channel();
-            cout << "Wating for receiver..." << endl;
+            cout << "Waiting for receiver..." << endl;
 
-            Sender sender(target_path , data_channel_ , is_secure , password , on_transfer_complete_);
+            // Instantiating the new Phase 2 Sender!
+            Sender sender(pending_files, base_directory, data_channel_, is_secure, password, on_transfer_complete_);
             sender.start_sending();
 
             while (is_running_) {
