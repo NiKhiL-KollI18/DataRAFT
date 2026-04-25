@@ -1,7 +1,12 @@
 #include "receiver.h"
 #include "webrtc_client.h"
+
+#include <filesystem>
+
 using namespace std;
 using namespace rtc;
+namespace fs = std::filesystem;
+
 
 FileReceiver::FileReceiver(shared_ptr<DataChannel> data_channel, string download_dir , function<void()> on_complete)
     :base_download_path_(std::move(download_dir)) , data_channel_(data_channel) , on_transfer_complete_(on_complete){
@@ -150,6 +155,17 @@ void FileReceiver::process_metadata(const binary &data) {
     memcpy(&metadata_ , data.data() , sizeof(FileMeta));
 
     current_filepath_ = base_download_path_ + "/" + string(metadata_.relative_path_); //append to base download path
+
+    try {
+        fs::path target_path(current_filepath_);
+        if (target_path.has_parent_path()) {
+            fs::create_directories(target_path.parent_path());
+        }
+    } catch (const fs::filesystem_error& e) {
+        cout << "[Fatal] Could not create directories for: " << current_filepath_ << "\n" << e.what() << endl;
+        send_ack(false, 0);
+        return;
+    }
 
     //resume logic & file opening
     uint64_t resume_pos = 0;
