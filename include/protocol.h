@@ -16,6 +16,7 @@ struct FileMeta {
 
     //feature flags
     bool is_transfer_complete_;
+    uint8_t crypto_iv_[12];
     char tag[16];
 
     //UX & OS specific
@@ -39,7 +40,6 @@ struct DataManifest {
     char password_hash_sha256_[65];
 
     uint8_t crypto_salt_[16];
-    uint8_t crypto_iv_[12];
 };
 
 #pragma pack(pop)

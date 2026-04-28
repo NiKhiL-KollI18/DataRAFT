@@ -118,20 +118,25 @@ void FileReceiver::handle_password_auth() {
         string input_password;
         bool auth_success = false;
 
-        vector<unsigned char> salt(manifest_.crypto_salt_ , manifest_.crypto_salt_ + 16);
-        vector<unsigned char> iv(manifest_.crypto_iv_ , manifest_.crypto_iv_ + 12);
-        string expected_hash(manifest_.password_hash_sha256_);
+        vector<uint8_t> salt(manifest_.crypto_salt_ , manifest_.crypto_salt_ + 16);
+
+        char safe_hash[128] = {0};
+        memcpy(safe_hash , manifest_.password_hash_sha256_ , sizeof(manifest_.password_hash_sha256_));
+        string expected_hash(safe_hash);
 
         while (!auth_success) {
             cout << "\n[Receiver] Transfer is locked. Please Enter Password : ";
             cin >> input_password;
 
             try {
-                file_helper::StreamDecryptor temp_decrypt(input_password , salt , iv);
+                file_helper::StreamDecryptor temp_decrypt(input_password , salt);
 
                 if (temp_decrypt.check_password_hash(expected_hash)) {
                     cout << "\n[Receiver] Password verified." << endl;
                     password_ = input_password;
+
+                    decryptor_.emplace(input_password, salt);
+
                     auth_success = true;
                 }else {
                     cout << "\r[Receiver] Incorrect password. Please try again." << flush;
@@ -198,9 +203,9 @@ void FileReceiver::process_metadata(const binary &data) {
 
     //decryption
     if (manifest_.is_encrypted_) {
-        vector<unsigned char> salt(manifest_.crypto_salt_ , manifest_.crypto_salt_ + 16);
-        vector<unsigned char> iv(manifest_.crypto_iv_ , manifest_.crypto_iv_ + 12);
-        decryptor_.emplace(password_ , salt , iv);
+        vector<uint8_t> file_iv(metadata_.crypto_iv_ , metadata_.crypto_iv_ + 12);
+
+        decryptor_->init_new_file(file_iv);
     }
 
     if (metadata_.is_compressed_) {
@@ -260,14 +265,14 @@ void FileReceiver::verify_and_finalize(const binary &data) {
     bool is_valid = true;
 
     //verify AES-GCM Auth tag
-    if (decryptor_ && current_file_count_ == manifest_.total_file_count_) {
-        vector<unsigned char> expected_tag(dummy_meta.tag , dummy_meta.tag + 16);
+    if (decryptor_) {
+        vector<uint8_t> expected_tag(dummy_meta.tag , dummy_meta.tag + 16);
         if (!decryptor_->verify_auth_tag(expected_tag)) {
-            cout << "[Security Alert] AES-GCM Auth tag mismatch! Data maybe corrupted or tampered with" << endl;
+            cout << "[SECURITY ALERT] AES-GCM Auth tag mismatch! File integrity may have been compromised" << endl;
             is_valid = false;
         }
         else {
-            cout << "[Receiver] AES-GCM Authentication : PASSED" << endl;
+            cout << "[Receiver] AES-GCM Auth tag: passed." << endl;
         }
     }
 

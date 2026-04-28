@@ -169,7 +169,7 @@ namespace file_helper {
 
     void create_data_manifest(DataManifest &data_manifest,
         const string &filepath, bool is_encrypted, const string &password_hash
-        , const vector<unsigned char> &salt, const vector<unsigned char> &iv) {
+        , const vector<unsigned char> &salt) {
 
         namespace fs = filesystem;
 
@@ -188,7 +188,6 @@ namespace file_helper {
             uint32_t file_count = 0;
 
             for (const auto& entry : fs::recursive_directory_iterator(p)) {
-                // THE FIX: You cannot get file_size() of a directory, only regular files!
                 if (entry.is_regular_file()) {
                     total_size += fs::file_size(entry);
                     file_count++;
@@ -209,7 +208,6 @@ namespace file_helper {
         if (is_encrypted) {
             strncpy(data_manifest.password_hash_sha256_, password_hash.c_str(), sizeof(data_manifest.password_hash_sha256_) - 1);
             memcpy(data_manifest.crypto_salt_, salt.data(), min(sizeof(data_manifest.crypto_salt_), salt.size()));
-            memcpy(data_manifest.crypto_iv_, iv.data(), min(sizeof(data_manifest.crypto_iv_), iv.size()));
         }
     }
 

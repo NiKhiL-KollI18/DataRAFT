@@ -2,6 +2,7 @@
 #include <stdexcept>
 #include <openssl/evp.h>
 #include <sstream>
+#include <openssl/err.h>
 
 #include "file_helper.h"
 
@@ -10,29 +11,26 @@ using namespace std;
 
 namespace file_helper {
 
-    StreamDecryptor::StreamDecryptor(const string &password,
-        const vector<unsigned char> &salt,
-        const vector<unsigned char> &iv) {
-
-        derived_key = derive_key(password , salt);
-
+    StreamDecryptor::StreamDecryptor(const string& password , const vector<unsigned char>& salt) {
+        derived_key_ = derive_key(password , salt);
         ctx = EVP_CIPHER_CTX_new();
         if (!ctx) {
             throw runtime_error("Error : failed to create OpenSSL cipher context");
         }
 
+        //preload the AES-GCM context type once
+        EVP_DecryptInit_ex(static_cast<EVP_CIPHER_CTX*>(ctx) , EVP_aes_256_gcm() , nullptr , nullptr , nullptr);
+        //preload the IVLEN once
+        EVP_CIPHER_CTX_ctrl(static_cast<EVP_CIPHER_CTX*>(ctx) , EVP_CTRL_GCM_SET_IVLEN , 12 , nullptr);
+    }
+
+    void StreamDecryptor::init_new_file(const vector<uint8_t> &iv) {
         auto* cipher_ctx = static_cast<EVP_CIPHER_CTX*>(ctx);
 
-        if (EVP_DecryptInit_ex(cipher_ctx , EVP_aes_256_gcm() , nullptr , nullptr , nullptr) != 1) {
-            throw runtime_error("Failed to initialize AES-GCM Decryption");
-        }
-
-        if (EVP_CIPHER_CTX_ctrl(cipher_ctx , EVP_CTRL_GCM_SET_IVLEN , static_cast<int>(iv.size()) , nullptr) != 1) {
-            throw runtime_error("Failed to set IV length");
-        };
-
-        if (EVP_DecryptInit_ex(cipher_ctx , nullptr , nullptr ,  derived_key.data() , iv.data()) != 1) {
-            throw runtime_error("Failed to set Key and IV");
+        if (EVP_DecryptInit_ex(cipher_ctx , nullptr , nullptr , derived_key_.data() , iv.data()) != 1) {
+            char err_msg[256];
+            ERR_error_string_n(ERR_get_error(), err_msg, sizeof(err_msg));
+            throw runtime_error("Failed to swap IV. It says : " + string(err_msg));
         }
     }
 
@@ -40,7 +38,7 @@ namespace file_helper {
         if (ctx) {
             EVP_CIPHER_CTX_free(static_cast<EVP_CIPHER_CTX *>(ctx));
         }
-        OPENSSL_cleanse(derived_key.data() , derived_key.size());
+        OPENSSL_cleanse(derived_key_.data() , derived_key_.size());
     }
 
     void StreamDecryptor::decrypt_chunk(std::vector<char>& chunk){
@@ -55,7 +53,9 @@ namespace file_helper {
                               &out_len,
                               reinterpret_cast<const unsigned char*>(chunk.data()),
                               static_cast<int>(chunk.size())) != 1) {
-            throw std::runtime_error("Fatal Error: OpenSSL failed to decrypt chunk.");
+            char err_msg[256];
+            ERR_error_string_n(ERR_get_error(), err_msg, sizeof(err_msg));
+            throw std::runtime_error("Fatal Error: OpenSSL failed to decrypt chunk." + string(err_msg));
                               }
 
         plaintext.resize(out_len);
@@ -84,7 +84,7 @@ namespace file_helper {
         unsigned char hash[EVP_MAX_MD_SIZE];
         unsigned int length = 0;
 
-        if (EVP_Digest(derived_key.data() , derived_key.size() , hash , &length , EVP_sha256() , nullptr) != 1) {
+        if (EVP_Digest(derived_key_.data() , derived_key_.size() , hash , &length , EVP_sha256() , nullptr) != 1) {
             return false;
         }
 

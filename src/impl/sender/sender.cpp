@@ -33,25 +33,37 @@ Sender::Sender(const queue<string> &files, const string &base_dir,
     vector<unsigned char> iv;
     string pass_hash = "";
 
-    if (is_encrypted) {
-        encryptor_.emplace(password_);
-        auto crypto_params = encryptor_->get_crypto_params();
-        salt = crypto_params.salt;
-        iv = crypto_params.iv;
-        pass_hash = encryptor_->get_password_hash();
-    }
-
-    // Pass base_directory_ so the file_helper can calculate relative folder structures!
-    // Notice we use the normal current_filepath_ here so the headers stay clean!
     file_helper::extract_metadata(current_filepath_ , base_directory_ , metadata_, "", false);
+
+    if (is_encrypted) {
+        encryptor_.emplace(password);
+        password_ = password;
+
+        salt = encryptor_->get_salt();
+        pass_hash = encryptor_->get_password_hash();
+
+        iv = encryptor_->init_new_file();
+
+        memcpy(metadata_.crypto_iv_ , iv.data() , 12);
+
+        cout << "\n[DEBUG SENDER] Generated Hash Length : " << pass_hash.length() << " bytes" << endl;
+        cout << "[DEBUG SENDER] Generated Hash String : " << pass_hash << endl;
+    }
 
     if (metadata_.is_compressed_) {
         compressor_.emplace();
     }
 
-    file_helper::create_data_manifest(data_manifest_ , current_filepath_ , is_encrypted, pass_hash , salt , iv);
+    memset(&data_manifest_, 0, sizeof(DataManifest));
 
-    // --- PHASE 2: Inject the Batch Details into the Manifest ---
+    file_helper::create_data_manifest(data_manifest_ , current_filepath_ , is_encrypted, pass_hash , salt);
+
+    // --- SALT DEBUG SENDER ---
+    cout << "[DEBUG SENDER] Struct Salt Bytes : ";
+    for(int i = 0; i < 16; i++) {
+        printf("%02x", data_manifest_.crypto_salt_[i]);
+    }
+    cout << endl;
     data_manifest_.total_file_count_ = total_files_in_batch_;
     data_manifest_.is_batch_directory_ = (total_files_in_batch_ > 1);
 }
@@ -139,6 +151,11 @@ void Sender::start_sending() {
                             memset(&metadata_, 0, sizeof(FileMeta));
                             file_helper::extract_metadata(current_filepath_, base_directory_, metadata_, "", false);
 
+                            if (data_manifest_.is_encrypted_) {
+                                auto new_iv = encryptor_->init_new_file();
+                                memcpy(metadata_.crypto_iv_, new_iv.data(), 12);
+                            }
+
                             if (metadata_.is_compressed_) compressor_.emplace();
                             else compressor_.reset();
 
@@ -151,7 +168,7 @@ void Sender::start_sending() {
                             data_channel_->send(reinterpret_cast<const std::byte*>(&metadata_), sizeof(FileMeta));
 
                         } else {
-                            // The queue is empty. We are officially done.
+                            // The queue is empty.
                             cout << "[Sender] Batch transfer complete! All files sent successfully." << endl;
                             current_state_ = SenderState::DONE;
                             if (on_transfer_complete_) on_transfer_complete_();

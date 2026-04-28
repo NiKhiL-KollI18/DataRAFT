@@ -1,17 +1,13 @@
 #pragma once
 
+#include <cstdint> // Required for uint8_t
 #include <functional>
 #include <string>
-#include<vector>
+#include <vector>
 
 #include "protocol.h"
 
 namespace file_helper {
-
-        struct CryptoParams {
-                std::vector<unsigned char> iv;
-                std::vector<unsigned char> salt;
-        };
 
         std::string to_windows_long_path(const std::string &standard_filepath);
 
@@ -21,8 +17,7 @@ namespace file_helper {
 
         void create_data_manifest(DataManifest& data_manifest , const std::string &filepath , bool is_encrypted ,
                 const std::string &password_hash = "",
-                const std::vector<unsigned char>& salt  = {},
-                const std::vector<unsigned char>& iv = {});
+                const std::vector<uint8_t>& salt  = {});
 
         std::string calculate_sha256(const std::string &filepath , const std::function<void(size_t , size_t)> &progress_callback);
 
@@ -32,7 +27,7 @@ namespace file_helper {
 
         std::string format_file_size(uint64_t bytes);
 
-        std::vector<unsigned char> derive_key(const std::string& password , const std::vector<unsigned char>& salt);
+        std::vector<uint8_t> derive_key(const std::string& password , const std::vector<uint8_t>& salt);
 
         class StreamingHasher {
         private:
@@ -50,9 +45,7 @@ namespace file_helper {
         class StreamCompressor {
         public:
                 StreamCompressor(int compression_level = 3);
-
                 ~StreamCompressor();
-
                 void compress_chunk(std::vector<char>&chunk , bool is_last_chunk);
         private:
                 void* ctx;
@@ -62,9 +55,7 @@ namespace file_helper {
         class StreamDecompressor {
         public:
                 StreamDecompressor();
-
                 ~StreamDecompressor();
-
                 void decompress_chunk(std::vector<char>& chunk);
         private:
                 void* ctx;
@@ -75,41 +66,41 @@ namespace file_helper {
         class StreamEncryptor {
         public:
                 StreamEncryptor(const std::string& password);
-
                 ~StreamEncryptor();
+
+                std::vector<uint8_t> init_new_file();
 
                 void encrypt_chunk(std::vector<char>& chunk);
 
-                [[nodiscard]] std::vector<unsigned char> get_auth_tag() const;
+                [[nodiscard]] std::vector<uint8_t> get_auth_tag() const;
 
-                [[nodiscard]] CryptoParams get_crypto_params() const;
+                [[nodiscard]] std::vector<uint8_t> get_salt() const;
 
                 [[nodiscard]] std::string get_password_hash() const;
 
         private:
                 void* ctx;
-                std::vector<unsigned char> derived_key;
-                CryptoParams params;
+                std::vector<uint8_t> derived_key_;
+                std::vector<uint8_t> salt_;
 
-                static std::vector<unsigned char> generate_random_numbers(size_t length);
+                static std::vector<uint8_t> generate_random_bytes(size_t length);
         };
 
         class StreamDecryptor {
         public:
                 StreamDecryptor(const std::string& password ,
-                        const std::vector<unsigned char>& salt ,
-                        const std::vector<unsigned char>& iv
-                        );
+                        const std::vector<uint8_t>& salt);
 
                 ~StreamDecryptor();
 
+                void init_new_file(const std::vector<uint8_t>& iv);
+
                 void decrypt_chunk(std::vector<char>& chunk);
 
-                [[nodiscard]] bool verify_auth_tag(const std::vector<unsigned char>& expected_tag) const;
-
+                [[nodiscard]] bool verify_auth_tag(const std::vector<uint8_t>& expected_tag) const;
                 [[nodiscard]] bool check_password_hash(const std::string &expected_hash) const;
         private:
                 void* ctx;
-                std::vector<unsigned char> derived_key;
+                std::vector<uint8_t> derived_key_;
         };
 }
