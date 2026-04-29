@@ -6,7 +6,6 @@
 
 #include "file_helper.h"
 
-
 using namespace std;
 
 namespace file_helper {
@@ -24,10 +23,10 @@ namespace file_helper {
         EVP_CIPHER_CTX_ctrl(static_cast<EVP_CIPHER_CTX*>(ctx) , EVP_CTRL_GCM_SET_IVLEN , 12 , nullptr);
     }
 
-    void StreamDecryptor::init_new_file(const vector<uint8_t> &iv) {
+    void StreamDecryptor::init_new_block(const vector<uint8_t> &block_iv) {
         auto* cipher_ctx = static_cast<EVP_CIPHER_CTX*>(ctx);
 
-        if (EVP_DecryptInit_ex(cipher_ctx , nullptr , nullptr , derived_key_.data() , iv.data()) != 1) {
+        if (EVP_DecryptInit_ex(cipher_ctx , nullptr , nullptr , derived_key_.data() , block_iv.data()) != 1) {
             char err_msg[256];
             ERR_error_string_n(ERR_get_error(), err_msg, sizeof(err_msg));
             throw runtime_error("Failed to swap IV. It says : " + string(err_msg));

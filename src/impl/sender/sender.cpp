@@ -59,11 +59,11 @@ Sender::Sender(const queue<string> &files, const string &base_dir,
     file_helper::create_data_manifest(data_manifest_ , current_filepath_ , is_encrypted, pass_hash , salt);
 
     // --- SALT DEBUG SENDER ---
-    cout << "[DEBUG SENDER] Struct Salt Bytes : ";
-    for(int i = 0; i < 16; i++) {
-        printf("%02x", data_manifest_.crypto_salt_[i]);
-    }
-    cout << endl;
+    // cout << "[DEBUG SENDER] Struct Salt Bytes : ";
+    // for(int i = 0; i < 16; i++) {
+    //     printf("%02x", data_manifest_.crypto_salt_[i]);
+    // }
+    // cout << endl;
     data_manifest_.total_file_count_ = total_files_in_batch_;
     data_manifest_.is_batch_directory_ = (total_files_in_batch_ > 1);
 }

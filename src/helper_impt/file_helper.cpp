@@ -39,7 +39,7 @@ namespace file_helper {
         return magic_prefix + abs_path;
     }
 
-    void extract_metadata(const string &filepath, const string &base_target_path, FileMeta &metadata , const string& sha256hash , bool is_transfer_complete) {
+    void extract_metadata(const string &filepath, const string &base_target_path, FileMeta &metadata) {
         namespace fs = std::filesystem;
         fs::path file_p(filepath);
         fs::path target_p(base_target_path);
@@ -73,15 +73,8 @@ namespace file_helper {
         string extension = file_p.extension().string();
         strncpy(metadata.extension_, extension.c_str(), sizeof(metadata.extension_) - 1);
 
-        //file integrity
-        string checksum = sha256hash;
-        strncpy(metadata.checksum_sha256_ , checksum.c_str() , sizeof(metadata.checksum_sha256_) - 1);
-
-        metadata.is_compressed_ = is_compressible(extension); // Fixed to use extension!
-
-        //feature flags
-        metadata.is_transfer_complete_ = is_transfer_complete;
-
+        //file properties
+        metadata.is_compressed_ = is_compressible(extension);
         metadata.file_permissions_ = static_cast<uint64_t>(fs::status(file_p).permissions());
     }
 
@@ -218,9 +211,20 @@ namespace file_helper {
         response.accept_transfer_ = accept_offer;
 
         if (accept_offer && fs::exists(filepath)) {
-            response.resume_from_byte_ = fs::file_size(filepath);
+            response.resume_from_block_ = fs::file_size(filepath);
         }else {
-            response.resume_from_byte_ = 0;
+            response.resume_from_block_ = 0;
         }
+    }
+
+    vector<uint8_t> derive_block_iv(const vector<uint8_t> &master_iv, uint64_t block_index) {
+        vector<uint8_t> block_iv(12);
+
+        memcpy(block_iv.data() , master_iv.data() , 12);
+
+        for (int i = 0 ; i < 8 ; i++) {
+            block_iv[11 - i] ^= static_cast<uint8_t>((block_index >> (i * 8)) & 0xFF);
+        }
+        return block_iv;
     }
 }

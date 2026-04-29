@@ -4,28 +4,36 @@
 
 #pragma pack(push , 1)
 
+enum class PacketType : uint8_t {
+    RAW_DATA = 0x00,
+    BLOCK_FOOTER = 0x01,
+    FILE_EOF = 0x02
+};
+
 struct FileMeta {
     //file info
     uint64_t file_size_;
     char relative_path_[512];
     char extension_[16];
 
-    //file integrity
-    char checksum_sha256_[65];
+    //file properties
     bool is_compressed_;
-
-    //feature flags
-    bool is_transfer_complete_;
-    uint8_t crypto_iv_[12];
-    char tag[16];
-
-    //UX & OS specific
     uint32_t file_permissions_;
+
+    //master key for the specific file
+    uint8_t master_crypto_iv_[12];
+};
+
+struct BlockFooter {
+    uint32_t block_index_; //For deriving chunk based IV
+    uint8_t auth_tag_[16];
+    char checksum_sha256_[65];
+    PacketType routing_flag_; //always PacketType::BlOCK_FOOTER
 };
 
 struct TransferAck {
     bool accept_transfer_;
-    uint64_t resume_from_byte_;
+    uint64_t resume_from_block_;
 };
 
 struct DataManifest {
@@ -39,7 +47,7 @@ struct DataManifest {
     bool is_encrypted_;
     char password_hash_sha256_[65];
 
-    uint8_t crypto_salt_[16];
+    uint8_t crypto_salt_[16]; //master key for specific transfer
 };
 
 #pragma pack(pop)

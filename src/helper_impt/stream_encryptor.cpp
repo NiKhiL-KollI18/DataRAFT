@@ -3,6 +3,7 @@
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 #include <sstream>
+#include <openssl/err.h>
 
 #include "file_helper.h"
 
@@ -42,15 +43,19 @@ namespace file_helper {
         OPENSSL_cleanse(derived_key_.data() , derived_key_.size());
     }
 
-    vector<uint8_t> StreamEncryptor::init_new_file() {
-        vector<uint8_t> iv = generate_random_bytes(12);
+    vector<uint8_t> StreamEncryptor::generate_new_master_iv() {
 
+        return generate_random_bytes(12);
+    }
+
+    void StreamEncryptor::init_new_block(const vector<uint8_t> &block_iv) {
         auto* cipher_ctx = static_cast<EVP_CIPHER_CTX*>(ctx);
-        //swap the key and iv without destroying the context
-        if (EVP_EncryptInit_ex(cipher_ctx , nullptr , nullptr , derived_key_.data() , iv.data()) != 1) {
-            throw runtime_error("Failed to swap IV");
+
+        if (EVP_EncryptInit_ex(cipher_ctx , nullptr , nullptr , derived_key_.data() , block_iv.data()) != 1) {
+            char err_msg[256];
+            ERR_error_string_n(ERR_get_error(), err_msg, sizeof(err_msg));
+            throw runtime_error("Failed to swap IV" + string(err_msg));
         }
-        return iv;
     }
 
     void StreamEncryptor::encrypt_chunk(vector<char> &chunk) {

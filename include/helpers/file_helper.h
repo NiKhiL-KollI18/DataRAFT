@@ -11,7 +11,7 @@ namespace file_helper {
 
         std::string to_windows_long_path(const std::string &standard_filepath);
 
-        void extract_metadata(const std::string &filepath , const std::string &base_target_path , FileMeta& metadata , const std::string &sha256hash = "" , bool is_transfer_completed = false);
+        void extract_metadata(const std::string &filepath , const std::string &base_target_path , FileMeta& metadata);
 
         void extract_transfer_ack(const std::string &filepath , TransferAck& response , bool accept_offer = true);
 
@@ -28,6 +28,8 @@ namespace file_helper {
         std::string format_file_size(uint64_t bytes);
 
         std::vector<uint8_t> derive_key(const std::string& password , const std::vector<uint8_t>& salt);
+
+        std::vector<uint8_t> derive_block_iv(const std::vector<uint8_t> &master_iv , uint64_t block_index);
 
         class StreamingHasher {
         private:
@@ -68,7 +70,9 @@ namespace file_helper {
                 StreamEncryptor(const std::string& password);
                 ~StreamEncryptor();
 
-                std::vector<uint8_t> init_new_file();
+                [[nodiscard]]std::vector<uint8_t> generate_new_master_iv();
+
+                void init_new_block(const std::vector<uint8_t>& block_iv);
 
                 void encrypt_chunk(std::vector<char>& chunk);
 
@@ -93,7 +97,7 @@ namespace file_helper {
 
                 ~StreamDecryptor();
 
-                void init_new_file(const std::vector<uint8_t>& iv);
+                void init_new_block(const std::vector<uint8_t>& block_iv);
 
                 void decrypt_chunk(std::vector<char>& chunk);
 
