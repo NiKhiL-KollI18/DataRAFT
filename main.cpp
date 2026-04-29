@@ -132,7 +132,7 @@ int main(int argc , char** argv) {
             cout << "Waiting for receiver..." << endl;
 
             // Instantiating the new Phase 2 Sender!
-            Sender sender(pending_files, base_directory, data_channel_, is_secure, password, on_transfer_complete_);
+            Sender sender(pending_files, base_directory, data_channel_, is_secure, password ,on_transfer_complete_);
             sender.start_sending();
 
             while (is_running_) {
@@ -148,7 +148,7 @@ int main(int argc , char** argv) {
             webrtc_client.wait_for_peer_connection();
             auto data_channel_ = webrtc_client.get_data_channel();
 
-            FileReceiver receiver(data_channel_ , out_path , on_transfer_complete_);
+            FileReceiver receiver(data_channel_ , out_path , true , on_transfer_complete_);
 
             receiver.start_receiving();
 

@@ -25,10 +25,9 @@ struct FileMeta {
 };
 
 struct BlockFooter {
-    uint32_t block_index_; //For deriving chunk based IV
+    uint64_t block_index_; //For deriving chunk based IV
     uint8_t auth_tag_[16];
     char checksum_sha256_[65];
-    PacketType routing_flag_; //always PacketType::BlOCK_FOOTER
 };
 
 struct TransferAck {

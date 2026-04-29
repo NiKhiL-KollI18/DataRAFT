@@ -15,11 +15,10 @@ Sender::Sender(const queue<string> &files, const string &base_dir,
 
     total_files_in_batch_ = pending_files_.size();
 
-    // 1. Pop the first file to initialize the pipeline
+    //pop the first file to initialize the pipeline
     current_filepath_ = pending_files_.front();
     pending_files_.pop();
 
-    // ARMOR IT before opening
     string safe_read_path = file_helper::to_windows_long_path(current_filepath_);
 
     infile_.open(safe_read_path , ios::binary);
@@ -27,13 +26,11 @@ Sender::Sender(const queue<string> &files, const string &base_dir,
         throw runtime_error("Fatal Error : Cannot open the file ->" + safe_read_path);
     }
 
-    hasher_.emplace();
-
     vector<unsigned char> salt;
-    vector<unsigned char> iv;
+    vector<unsigned char> master_iv;
     string pass_hash = "";
 
-    file_helper::extract_metadata(current_filepath_ , base_directory_ , metadata_, "", false);
+    file_helper::extract_metadata(current_filepath_ , base_directory_ , metadata_);
 
     if (is_encrypted) {
         encryptor_.emplace(password);
@@ -42,28 +39,16 @@ Sender::Sender(const queue<string> &files, const string &base_dir,
         salt = encryptor_->get_salt();
         pass_hash = encryptor_->get_password_hash();
 
-        iv = encryptor_->init_new_file();
+        master_iv = encryptor_->generate_new_master_iv();
 
-        memcpy(metadata_.crypto_iv_ , iv.data() , 12);
+        memcpy(metadata_.master_crypto_iv_ , master_iv.data() , 12);
 
-        cout << "\n[DEBUG SENDER] Generated Hash Length : " << pass_hash.length() << " bytes" << endl;
-        cout << "[DEBUG SENDER] Generated Hash String : " << pass_hash << endl;
-    }
-
-    if (metadata_.is_compressed_) {
-        compressor_.emplace();
     }
 
     memset(&data_manifest_, 0, sizeof(DataManifest));
 
     file_helper::create_data_manifest(data_manifest_ , current_filepath_ , is_encrypted, pass_hash , salt);
 
-    // --- SALT DEBUG SENDER ---
-    // cout << "[DEBUG SENDER] Struct Salt Bytes : ";
-    // for(int i = 0; i < 16; i++) {
-    //     printf("%02x", data_manifest_.crypto_salt_[i]);
-    // }
-    // cout << endl;
     data_manifest_.total_file_count_ = total_files_in_batch_;
     data_manifest_.is_batch_directory_ = (total_files_in_batch_ > 1);
 }
@@ -113,8 +98,46 @@ void Sender::start_sending() {
                         return;
                     }
 
-                    resume_from_byte = ack.resume_from_byte_;
-                    cout << "[Sender] Metadata accepted. Sending from byte : " << resume_from_byte << endl;
+                    //--SKIP LOGIC--
+                    if (ack.resume_from_block_ == ULLONG_MAX) {
+                        cout << "[Sender] SKIPPING..." << endl;
+                        infile_.close();
+
+                        // Execute Batch Loop
+                        if (!pending_files_.empty()) {
+                            current_filepath_ = pending_files_.front();
+                            pending_files_.pop();
+
+                            string safe_read_path = file_helper::to_windows_long_path(current_filepath_);
+                            infile_.open(safe_read_path, ios::binary);
+                            if (!infile_.is_open()) {
+                                cout << "[Fatal] Cannot open next file in batch: " << safe_read_path << endl;
+                                current_state_ = SenderState::DONE;
+                                if (on_transfer_complete_) on_transfer_complete_();
+                                return;
+                            }
+
+                            memset(&metadata_, 0, sizeof(FileMeta));
+                            file_helper::extract_metadata(current_filepath_, base_directory_, metadata_);
+
+                            if (data_manifest_.is_encrypted_) {
+                                auto new_master_iv = encryptor_->generate_new_master_iv();
+                                memcpy(metadata_.master_crypto_iv_, new_master_iv.data(), 12);
+                            }
+                            cout << "[Sender] Loading next file in batch: " << current_filepath_ << endl;
+
+                            data_channel_->send(reinterpret_cast<const std::byte*>(&metadata_), sizeof(FileMeta));
+                        }else {
+                            cout << "[Sender] Batch transfer complete! All files sent successfully." << endl;
+                            current_state_ = SenderState::DONE;
+                            if (on_transfer_complete_) on_transfer_complete_();
+                        }
+                        return;
+                    }
+
+                    //--NORMAL TRANSFER
+                    resume_from_block_ = ack.resume_from_block_;
+                    cout << "[Sender] Metadata accepted. Sending from byte : " << resume_from_block_ << endl;
 
                     current_state_ = SenderState::TRANSFERRING;
 
@@ -130,13 +153,11 @@ void Sender::start_sending() {
                         }
                         infile_.close();
 
-                        // --- PHASE 2: THE BATCH LOOP ---
                         if (!pending_files_.empty()) {
-                            // 1. Load the next file
+                            //Load the next file
                             current_filepath_ = pending_files_.front();
                             pending_files_.pop();
 
-                            // ARMOR IT before opening
                             string safe_read_path = file_helper::to_windows_long_path(current_filepath_);
 
                             infile_.open(safe_read_path, ios::binary);
@@ -149,17 +170,12 @@ void Sender::start_sending() {
 
                             // 2. Extract new metadata (using normal path)
                             memset(&metadata_, 0, sizeof(FileMeta));
-                            file_helper::extract_metadata(current_filepath_, base_directory_, metadata_, "", false);
+                            file_helper::extract_metadata(current_filepath_, base_directory_, metadata_);
 
                             if (data_manifest_.is_encrypted_) {
-                                auto new_iv = encryptor_->init_new_file();
-                                memcpy(metadata_.crypto_iv_, new_iv.data(), 12);
+                                auto new_master_iv = encryptor_->generate_new_master_iv();
+                                memcpy(metadata_.master_crypto_iv_, new_master_iv.data(), 12);
                             }
-
-                            if (metadata_.is_compressed_) compressor_.emplace();
-                            else compressor_.reset();
-
-                            hasher_.emplace();
 
                             cout << "[Sender] Loading next file in batch: " << current_filepath_ << endl;
 

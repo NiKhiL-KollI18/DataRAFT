@@ -3,13 +3,16 @@
 
 #include <filesystem>
 
+#include "sender.h"
+
 using namespace std;
 using namespace rtc;
 namespace fs = std::filesystem;
 
 
-FileReceiver::FileReceiver(shared_ptr<DataChannel> data_channel, string download_dir , function<void()> on_complete)
-    :base_download_path_(std::move(download_dir)) , data_channel_(data_channel) , on_transfer_complete_(on_complete){
+FileReceiver::FileReceiver(shared_ptr<DataChannel> data_channel, string download_dir , bool skip_existing , function<void()> on_complete)
+    :base_download_path_(std::move(download_dir)) , data_channel_(data_channel) , on_transfer_complete_(on_complete)
+    , skip_existing_files_(skip_existing){
     memset(&manifest_ , 0 , sizeof(DataManifest));
     memset(&metadata_ , 0 , sizeof(FileMeta));
 }
@@ -20,10 +23,10 @@ FileReceiver::~FileReceiver() {
     }
 }
 
-void FileReceiver::send_ack(bool accept, uint64_t resume_pos) {
-    TransferAck ack;
+void FileReceiver::send_ack(bool accept, uint64_t resume_block) {
+    TransferAck ack{};
     ack.accept_transfer_ = accept;
-    ack.resume_from_byte_ = resume_pos;
+    ack.resume_from_block_ = resume_block;
 
     data_channel_->send(reinterpret_cast<const std::byte*>(&ack) , sizeof(TransferAck));
 }
@@ -31,12 +34,12 @@ void FileReceiver::send_ack(bool accept, uint64_t resume_pos) {
 void FileReceiver::start_receiving() {
     cout << "[Receiver] listening for incoming transfers..." << endl;
 
-    //state machine
+    //---IMPLICIT STATE MACHINE---
     data_channel_->onMessage([this](variant<binary , string> data) {
         try {
             if (holds_alternative<binary>(data)) {
 
-                auto raw_data = std::get<binary>(std::move(data));
+                auto raw_data = get<binary>(data);
 
                 if (raw_data.empty()) return;
 
@@ -55,35 +58,31 @@ void FileReceiver::start_receiving() {
                     case ReceiverState::RECEIVING_DATA:
                     {
                         vector<char> chunk(reinterpret_cast<const char*>(raw_data.data()) ,
-                            reinterpret_cast<const char*>(raw_data.data()) + raw_data.size());
+                            reinterpret_cast<const char*>(raw_data.data() + raw_data.size()));
 
-                        //extract routing footer flag
-                        uint8_t footer_flag = static_cast<uint8_t>(chunk.back());
+                        //Extracting router flag
+                        auto footer_flag = static_cast<PacketType>(chunk.back());
                         chunk.pop_back();
 
-                        if (footer_flag == 0x00) {
-                            // Standard Data packet
+                        if (footer_flag == PacketType::RAW_DATA) {
+                            //standard data packets
                             process_data_chunks(std::move(chunk));
                         }
-                        else if (footer_flag == 0x01) {
-                            //EOF Cryptographic Receipt Payload
-                            cout << "Found the EOF Footer" << endl;
-                            rtc::binary receipt_data(
-                                reinterpret_cast<const std::byte*>(chunk.data()) ,
-                                reinterpret_cast<const std::byte*>(chunk.data()) + chunk.size()
-                                );
-                            verify_and_finalize(receipt_data);
+                        else if (footer_flag == PacketType::BLOCK_FOOTER) {
+                            //Hit 8MB Block boundary! Verify this block's integrity
+                            process_block_footer(std::move(chunk));
+                        }
+                        else if (footer_flag == PacketType::FILE_EOF) {
+                            //end of the entire file.
+                            cout << "[Receiver] Found EOF footer" << endl;
+                            process_file_eof();
                         }
                     }
                     break;
-
-                case ReceiverState::AWAITING_CONFIRMATION:
-                        verify_and_finalize(raw_data);
-                        break;
                 }
             }
         } catch (const std::exception& e) {
-            cout << "\n[Fatal Receiver Error] Pipeline crashed: " << e.what() << endl;
+            cout << "\n[Fatal Error] Pipeline crashed: " << e.what() << endl;
             if (on_transfer_complete_) on_transfer_complete_();
         }
     });
@@ -159,11 +158,13 @@ void FileReceiver::process_metadata(const binary &data) {
 
     memcpy(&metadata_ , data.data() , sizeof(FileMeta));
 
-    // 1. Calculate the standard target path
+    // Calculate the target paths
     string raw_target_path = base_download_path_ + "/" + string(metadata_.relative_path_);
+    string raw_raft_path = raw_target_path + ".raftpath";
 
-    // 2. ARMOR IT: Convert to a Windows Long Path
-    current_filepath_ = file_helper::to_windows_long_path(raw_target_path);
+    // Convert to a Windows Long Path
+    final_filepath_ = file_helper::to_windows_long_path(raw_target_path);
+    current_filepath_ = file_helper::to_windows_long_path(raw_raft_path); //Active downloads uses .raftpath
 
     try {
         fs::path target_path(current_filepath_);
@@ -176,44 +177,76 @@ void FileReceiver::process_metadata(const binary &data) {
         return;
     }
 
-    //resume logic & file opening
-    uint64_t resume_pos = 0;
-    ifstream check_file(current_filepath_ , ios::binary | ios::ate);
-    if (check_file.is_open()) {
-        resume_pos = check_file.tellg();
-        check_file.close();
-        cout << "[Receiver] Found partial file. Resuming from byte: " << resume_pos << endl;
-    } else {
-        cout << "[Receiver] Starting new file download." << metadata_.relative_path_ << endl;
+    //---1 . Check for complete files---
+    if (fs::exists(final_filepath_)) {
+        if (skip_existing_files_) {
+            cout << "[Receiver] File Already exists. Skipping : " << metadata_.relative_path_ << endl;
+
+            if (manifest_.is_batch_directory_ && current_file_count_ < manifest_.total_file_count_) {
+                current_file_count_++;
+            }
+            //send special flag to indicate skip
+            send_ack(true, UINT64_MAX);
+            return;
+        }
+        else {
+            cout << "[Receiver] Replace Enabled. Overwritting completed files..." << endl;
+            fs::remove(final_filepath_);
+        }
     }
 
-    //If resuming , open in append mode. Otherwise , truncate (create newone)
-    outfile_.open(current_filepath_ , ios::binary | (resume_pos > 0 ? ios::app : ios::trunc));
+    //---2. RESUME PARTIAL FILES---
+    uint64_t resume_block = 0;
+
+    if (fs::exists(current_filepath_)) {
+        if (skip_existing_files_) {
+            uint64_t current_disk_size = fs::file_size(current_filepath_);
+
+            //drop incomplete blocks
+            resume_block = current_disk_size / BLOCK_SIZE;
+            uint64_t safe_byte_size = resume_block * BLOCK_SIZE;
+
+            //snip the existing file to safe_byte_size
+            fs::resize_file(current_filepath_ , safe_byte_size);
+
+            cout << "[Receiver] Found partial file. Resuming from block" << resume_block << endl;
+        }else {
+            //replace mode : delete partial file
+            fs::remove(current_filepath_);
+        }
+    }else {
+        cout << "[Receiver] Starting new file download : " << metadata_.relative_path_ << endl;
+    }
+
+    //--3. Open file--
+    //if resuming open in append mode, else truncate
+    outfile_.open(current_filepath_ , ios::binary | (resume_block > 0 ? ios::app : ios::trunc));
     if (!outfile_.is_open()) {
-        cout << "[Receiver] Could not open file for writing ->" << current_filepath_ << endl;
-        send_ack(false);
+        cout << "[Fatal] Cannot open file for writing : " << current_filepath_ << endl;
+        send_ack(false, 0);
         return;
     }
 
-    bytes_processed_count_ = resume_pos;
+    //sync state machine
+    current_block_index_ = resume_block;
+    bytes_processed_count_ = resume_block * BLOCK_SIZE;
 
-    //reformers
-    //hashing
+    //--4. REFORMERS--
     hasher_.emplace();
-
-    //decryption
-    if (manifest_.is_encrypted_) {
-        vector<uint8_t> file_iv(metadata_.crypto_iv_ , metadata_.crypto_iv_ + 12);
-
-        decryptor_->init_new_file(file_iv);
-    }
 
     if (metadata_.is_compressed_) {
         decompressor_.emplace();
     }
 
+    if (manifest_.is_encrypted_) {
+        vector<uint8_t> master_iv(metadata_.master_crypto_iv_ , metadata_.master_crypto_iv_ + 12);
+        auto block_iv = file_helper::derive_block_iv(master_iv , current_block_index_);
+
+        decryptor_->init_new_block(block_iv);
+    }
+
     //initializing data receiver
-    send_ack(true , resume_pos);
+    send_ack(true , resume_block);
     current_state_ = ReceiverState::RECEIVING_DATA;
 }
 
@@ -230,12 +263,7 @@ void FileReceiver::process_data_chunks(vector<char> &&chunk) {
         // 3.hash
         if (hasher_) hasher_->update_hash(chunk);
 
-        // 4. write to disk and add to count
         outfile_.write(chunk.data(), chunk.size());
-
-        // Ensure we flush to disk so OS buffers don't explode (Crucial for large MKV files!)
-        // outfile_.flush(); // Optional: Uncomment if it crashes again to force disk writes
-
         bytes_processed_count_ += chunk.size();
 
         if (bytes_processed_count_ >= last_significant_point_size_ + 10 * 1024 * 1024) {
@@ -243,70 +271,105 @@ void FileReceiver::process_data_chunks(vector<char> &&chunk) {
             last_significant_point_size_ = bytes_processed_count_;
         }
 
-        // if (bytes_processed_count_ >= metadata_.file_size_) {
-        //     current_state_ = ReceiverState::AWAITING_CONFIRMATION;
-        // }
-
     } catch (const std::exception& e) {
         cout << "\n[Receiver] Pipeline Error during data processing : " << e.what() << endl;
-        // Don't kill the app here, let verify_and_finalize catch the corrupted file!
     }
 }
 
-void FileReceiver::verify_and_finalize(const binary &data) {
-    if (data.size() != sizeof(FileMeta)) return;
+void FileReceiver::process_block_footer(vector<char> &&footer_data) {
+    if (footer_data.size() != sizeof(BlockFooter)) {
+        cout << "[Receiver] received corrupted block footer." << endl;
+        return;
+    }
 
-    FileMeta dummy_meta;
-    memcpy(&dummy_meta, data.data() , sizeof(FileMeta));
+    BlockFooter footer{};
+    memcpy(&footer , footer_data.data() , sizeof(BlockFooter));
 
-    if (!dummy_meta.is_transfer_complete_) return;
-
-    cout << "\n[Receiver] End of the File detected. Auditing crypto signatures..." << endl;
     bool is_valid = true;
 
-    //verify AES-GCM Auth tag
+    //1. Verify AES-GCM Tag
     if (decryptor_) {
-        vector<uint8_t> expected_tag(dummy_meta.tag , dummy_meta.tag + 16);
+        vector<uint8_t> expected_tag(footer.auth_tag_ , footer.auth_tag_ + 16);
         if (!decryptor_->verify_auth_tag(expected_tag)) {
-            cout << "[SECURITY ALERT] AES-GCM Auth tag mismatch! File integrity may have been compromised" << endl;
+            cout << "\n[SECURITY ALERT] Block " << footer.block_index_ << " AES-GCM Auth Tag mismatch!" << endl;
             is_valid = false;
         }
-        else {
-            cout << "[Receiver] AES-GCM Auth tag: passed." << endl;
+    }
+
+    //2. Verify CheckSUM
+    if (hasher_) {
+        string calculated_hash = hasher_->get_sha256_hash();
+        if (calculated_hash != footer.checksum_sha256_) {
+            cout << "\n[SECURITY ALERT] Block " << footer.block_index_ << " SHA-256 Checksum mismatch!" << endl;
+            is_valid = false;
         }
     }
 
-    //verify SHA-256 check sum
-    string calculated_hash = hasher_->get_sha256_hash();
-    if (calculated_hash != dummy_meta.checksum_sha256_) {
-        cout << "[SECURITY ALERT] SHA-256 checksum mismatch! File integrity may have been compromised" << endl;
-        is_valid = false;
-    }
-    else {
-        cout << "[Receiver] SHA-256 CheckSUM: passed." << endl;
+    //--4. Corruption Handling
+    if (!is_valid) {
+        cout << "[Receiver] Data corruption detected. Rolling back to last safe block : " << footer.block_index_ - 1<< endl;
+
+        //close the file
+
+        uint64_t safe_byte_size = current_block_index_ * BLOCK_SIZE;
+
+        //snip the corrupted chunk
+        try {
+            fs::resize_file(current_filepath_ , safe_byte_size);
+        } catch (exception& e) {
+            cout << "[Fatal] Cannot truncate file : " << current_filepath_ << endl;
+            return;
+        }
+
+        send_ack(false , current_block_index_);
+        if (on_transfer_complete_) on_transfer_complete_();
+        return;
     }
 
-    if (is_valid) {
-        cout << "[Receiver] Transfer successful and verified.File Stored at \n" << current_filepath_ << endl;
-        send_ack(true , bytes_processed_count_);
+    //--Successful block transfer--
+    current_block_index_++;
+
+    hasher_.emplace();
+
+    if (metadata_.is_compressed_) {
+        decompressor_.emplace();
     }
-    else {
-        cout << "[Receiver] Corrupted data stored at : \n" << current_filepath_ << endl;
-        send_ack(false , bytes_processed_count_);
+
+    if (manifest_.is_encrypted_) {
+        vector<uint8_t> master_iv(metadata_.master_crypto_iv_ , metadata_.master_crypto_iv_ + 12);
+
+        auto next_block_iv = file_helper::derive_block_iv(master_iv , current_block_index_);
+        decryptor_->init_new_block(next_block_iv);
     }
+}
+
+void FileReceiver::process_file_eof() {
     outfile_.close();
-    //decryptor stays online if it's batch directory
+
+    //--THE COMMIT--
+    try {
+        if (fs::exists(final_filepath_)) {
+            fs::remove(final_filepath_);
+        }
+
+        fs::rename(current_filepath_ , final_filepath_);
+        cout << "[Receiver] File transfer complete : " << metadata_.relative_path_ << endl;
+    } catch (exception& e) {
+        cout << "Failed to finalize .raftpath rename: " << e.what() << endl;
+    }
+
+    send_ack(true , 0);
+
     hasher_.reset();
     decompressor_.reset();
-    if (manifest_.is_batch_directory_ && current_file_count_ < manifest_.total_file_count_) {
+
+    //---Batch Loop---
+    if (manifest_.is_batch_directory_) {
         current_state_ = ReceiverState::AWAITING_METADATA;
         current_file_count_++;
-    }
-    else {
+    }else {
         decryptor_.reset();
-        cout << "[Receiver] All files in batch received successfully!" << endl;
-        if (on_transfer_complete_) {
-            on_transfer_complete_();
-        }
+        cout << "\n[Receiver] All Files in Batch Received successfully!" << endl;
+        if (on_transfer_complete_) on_transfer_complete_();
     }
 }

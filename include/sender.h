@@ -9,8 +9,9 @@
 #include "rtc/rtc.hpp"
 #include<queue>
 
-constexpr int MAX_QUEUE_SIZE = 16 * 1024 * 1024; //16MiB
-constexpr int BUCKET_SIZE = (32 * 1024) - 1; //32KB - 1 , to add footer at the end
+constexpr int MAX_QUEUE_SIZE = 16 * 1024 * 1024; //16MB
+constexpr int BUCKET_SIZE = (32 * 1024) - 1;//32KB - 1 , to add footer at the end
+constexpr int BLOCK_SIZE = 8 * 1024 * 1024; //8MB
 
 class Sender {
 private:
@@ -24,7 +25,7 @@ private:
     std::ifstream infile_;
     FileMeta metadata_{};
 
-    uint64_t resume_from_byte = 0;
+    uint64_t resume_from_block_ = 0;
 
     DataManifest data_manifest_;
 
