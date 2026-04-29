@@ -8,23 +8,29 @@
 #include "webrtc_client.h"
 #include "receiver.h"
 #include "sender.h"
+#include "globals.h"
 
 using namespace std;
 namespace fs = std::filesystem;
 
-std::atomic<bool> is_running_{true};
+namespace raft_globals {
+    atomic<bool> is_running{true};
 
-void on_transfer_complete_() {
-    cout << "[DataRAFT] Transfer completed..." << endl;
-    is_running_ = false;
+    void shutdown(const string& reason) {
+        bool expected = true;
+        if (!is_running.compare_exchange_strong(expected , false)) {
+            return;
+        }
+
+        cout << "\n" << reason << endl;
+        cout << "Shutting down..." << endl;
+    }
 }
 
 string prompt_for_password() {
     string password;
     cout << "Enter your password to secure the transfer" << endl;
-
     cin >> password;
-
     return password;
 }
 
@@ -132,10 +138,10 @@ int main(int argc , char** argv) {
             cout << "Waiting for receiver..." << endl;
 
             // Instantiating the new Phase 2 Sender!
-            Sender sender(pending_files, base_directory, data_channel_, is_secure, password ,on_transfer_complete_);
+            Sender sender(pending_files, base_directory, data_channel_, is_secure, password);
             sender.start_sending();
 
-            while (is_running_) {
+            while (raft_globals::is_running) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
         }
@@ -148,16 +154,16 @@ int main(int argc , char** argv) {
             webrtc_client.wait_for_peer_connection();
             auto data_channel_ = webrtc_client.get_data_channel();
 
-            FileReceiver receiver(data_channel_ , out_path , true , on_transfer_complete_);
+            FileReceiver receiver(data_channel_ , out_path , true);
 
             receiver.start_receiving();
 
-            while (is_running_) {
+            while (raft_globals::is_running) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
         }
     } catch (exception& e) {
-        cerr << "[DataRAFT] Fatal Error : " << e.what() << endl;
+        raft_globals::shutdown(string("Fatal Setup Error:") + e.what()) ;
         return 1;
     }
     return 0;

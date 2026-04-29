@@ -4,11 +4,12 @@
 #include <vector>
 #include <optional>
 #include <memory>
-#include <functional>
 
 #include "file_helper.h"
 #include "protocol.h"
 #include "rtc/rtc.hpp"
+
+constexpr int BLOCK_SIZE = 8 * 1024 * 1024; //8MB
 
 class FileReceiver {
 private:
@@ -33,8 +34,6 @@ private:
     //Handshake Structs
     DataManifest manifest_;
     FileMeta metadata_;
-
-    std::function<void()> on_transfer_complete_;
 
     //Progress Tracking
     uint64_t bytes_processed_count_ = 0;
@@ -65,7 +64,7 @@ private:
     void send_ack(bool accept , uint64_t resume_block = 0);
 
 public:
-    FileReceiver(std::shared_ptr<rtc::DataChannel> data_channel , std::string download_dir , bool skip_exsting , std::function<void()> on_complete);
+    FileReceiver(std::shared_ptr<rtc::DataChannel> data_channel , std::string download_dir , bool skip_existing);
 
     ~FileReceiver();
 

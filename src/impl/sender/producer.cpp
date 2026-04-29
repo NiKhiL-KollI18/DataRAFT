@@ -1,3 +1,4 @@
+#include "globals.h"
 #include "sender.h"
 
 using namespace std;
@@ -9,13 +10,13 @@ void Sender::producer() {
     try {
         if (resume_from_block_ > 0) {
             infile_.seekg(static_cast<long long>(resume_from_block_) * BLOCK_SIZE , ios::beg);
-            cout << "[Sender] Resuming from block" << endl;
+            cout << "[Sender] Resuming from block " << resume_from_block_ << endl;
         }
 
         uint64_t current_block_index = resume_from_block_;
 
-        //OUTERLOOP : 8MB BLOCKS
-        while (infile_ && current_state_ == SenderState::TRANSFERRING) {
+        // OUTER LOOP : 8MB BLOCKS
+        while (infile_ && current_state_ == SenderState::TRANSFERRING && raft_globals::is_running) {
             hasher_.emplace();
 
             if (metadata_.is_compressed_) {
@@ -30,8 +31,8 @@ void Sender::producer() {
 
             size_t bytes_read_for_block = 0;
 
-            //INNER LOOP : 32KB CHUNKS
-            while (bytes_read_for_block < BLOCK_SIZE && infile_ && current_state_ == SenderState::TRANSFERRING) {
+            // INNER LOOP : 32KB CHUNKS
+            while (bytes_read_for_block < BLOCK_SIZE && infile_ && current_state_ == SenderState::TRANSFERRING && raft_globals::is_running) {
 
                 size_t bytes_to_read = min(static_cast<size_t>(BUCKET_SIZE) ,
                     static_cast<size_t>(BLOCK_SIZE - bytes_read_for_block));
@@ -40,7 +41,7 @@ void Sender::producer() {
                 infile_.read(buffer.data() , static_cast<streamsize>(bytes_to_read));
                 streamsize bytes_read = infile_.gcount();
 
-                if (bytes_read == 0) break; //EOF reached
+                if (bytes_read == 0) break; // EOF reached
 
                 buffer.resize(bytes_read);
                 bytes_read_for_block += bytes_read;
@@ -57,36 +58,28 @@ void Sender::producer() {
                     encryptor_->encrypt_chunk(buffer);
                 }
 
-                //add PacketType::RAW_DATA flag for routing
+                // Add PacketType::RAW_DATA flag for routing
                 buffer.push_back(static_cast<char>(PacketType::RAW_DATA));
 
-                //Push to Queue
                 {
                     unique_lock<mutex> lock(queue_mutex_);
-                    queue_cv_.wait(lock , [this]() {
-                        return current_queue_size_ < MAX_QUEUE_SIZE;
+                    queue_cv_.wait_for(lock, std::chrono::milliseconds(100), [this]() {
+                        return current_queue_size_ < MAX_QUEUE_SIZE || !raft_globals::is_running;
                     });
+
+                    if (!raft_globals::is_running) break; // Escape immediately if app is killed
+
                     current_queue_size_ += buffer.size();
                     chunk_queue_.push(std::move(buffer));
                 }
 
-                //WebRTC Stutter prevention Flush
-                while (true) {
-                    std::vector<char> chunk_to_send;
-                    {
-                        lock_guard<mutex> inner_lock(queue_mutex_);
-                        if (chunk_queue_.empty() || data_channel_->bufferedAmount() + chunk_queue_.front().size() > (256 * 1024)) {
-                            break;
-                        }
-                        chunk_to_send = std::move(chunk_queue_.front());
-                        chunk_queue_.pop();
-                        current_queue_size_ -= chunk_to_send.size();
-                    }
-                    data_channel_->send(reinterpret_cast<const std::byte*>(chunk_to_send.data()) , chunk_to_send.size());
-                }
+                // WebRTC Stutter prevention Flush
+                flush_network_queue();
             }
 
-            //--Block finalization--
+            if (!raft_globals::is_running) break;
+
+            // --Block finalization--
             if (bytes_read_for_block > 0) {
                 BlockFooter footer;
                 memset(&footer , 0 , sizeof(BlockFooter));
@@ -100,68 +93,64 @@ void Sender::producer() {
                     memcpy(footer.auth_tag_ , auth_tag.data() , 16);
                 }
 
-                //convert struct to char vector
                 vector<char> footer_buffer(sizeof(BlockFooter));
                 memcpy(footer_buffer.data() , &footer , sizeof(BlockFooter));
 
                 footer_buffer.push_back(static_cast<char>(PacketType::BLOCK_FOOTER));
 
-                //PushFooter to queue
                 {
                     unique_lock<mutex> lock(queue_mutex_);
-                    queue_cv_.wait(lock , [this]() {
-                        return current_queue_size_ < MAX_QUEUE_SIZE;
+                    queue_cv_.wait_for(lock, std::chrono::milliseconds(100), [this]() {
+                        return current_queue_size_ < MAX_QUEUE_SIZE || !raft_globals::is_running;
                     });
+
+                    if (!raft_globals::is_running) break;
+
                     current_queue_size_ += footer_buffer.size();
                     chunk_queue_.push(std::move(footer_buffer));
                 }
 
-                //flush Network queue again
-                while (true) {
-                    std::vector<char> chunk_to_send;
-                    {
-                        lock_guard<mutex> inner_lock(queue_mutex_);
-                        if (chunk_queue_.empty() || data_channel_->bufferedAmount() + chunk_queue_.front().size() > 256 * 1024) {
-                            break;
-                        }
-                        chunk_to_send = std::move(chunk_queue_.front());
-                        chunk_queue_.pop();
-                        current_queue_size_ -= chunk_to_send.size();
-                    }
-                    data_channel_->send(reinterpret_cast<const std::byte*>(chunk_to_send.data()) , chunk_to_send.size());
-                }
-                current_block_index++; //Incremental math for the next 8MB loop
+                // Flush Network queue again
+                flush_network_queue();
+
+                current_block_index++; // Incremental math for the next 8MB loop
             }
-        }//EOF of entire file
+        } // EOF of entire file (or aborted)
 
-        cout << "[Sender] Disk read completed. Sending EOF signal..." << endl;
+        if (raft_globals::is_running) {
+            cout << "[Sender] Disk read completed. Sending EOF signal..." << endl;
 
-        vector<char> eof_buffer = { static_cast<char>(PacketType::FILE_EOF)};
-        {
-            lock_guard<mutex> lock(queue_mutex_);
-            current_queue_size_ += eof_buffer.size();
-            chunk_queue_.push(std::move(eof_buffer));
-        }
-
-        //Final Network Flush
-        while (true) {
-            std::vector<char> chunk_to_send;
+            vector<char> eof_buffer = { static_cast<char>(PacketType::FILE_EOF)};
             {
-                lock_guard<mutex> inner_lock(queue_mutex_);
-                if (chunk_queue_.empty() || data_channel_->bufferedAmount() + chunk_queue_.front().size() > 256 * 1024) {
-                    break;
-                }
-                chunk_to_send = std::move(chunk_queue_.front());
-                chunk_queue_.pop();
-                current_queue_size_ -= chunk_to_send.size();
+                lock_guard<mutex> lock(queue_mutex_);
+                current_queue_size_ += eof_buffer.size();
+                chunk_queue_.push(std::move(eof_buffer));
             }
-            data_channel_->send(reinterpret_cast<const std::byte*>(chunk_to_send.data()) , chunk_to_send.size());
+
+            // Final Network Flush
+            flush_network_queue();
+
+            is_file_reading_completed_ = true;
+            cout << "[Sender] File read completed. Awaiting ACK from receiver..." << endl;
         }
 
-        is_file_reading_completed_ = true;
-        cout << "[Sender] File read completed. Awaiting ACK from receiver..." << endl;
     } catch (exception &e) {
-        cout << "\n[Fatal Error] Producer Crashed : " << e.what() << endl;
-        if (on_transfer_complete_) on_transfer_complete_();
+        raft_globals::shutdown(std::string("Producer thread crashed: ") + e.what());
+    }
+}
+
+void Sender::flush_network_queue() {
+    while (raft_globals::is_running) {
+        vector<char> chunk_to_send;
+        {
+            lock_guard<mutex> inner_lock(queue_mutex_);
+            if (chunk_queue_.empty() || data_channel_->bufferedAmount() + chunk_queue_.front().size() > (256 * 1024)) {
+                break;
+            }
+            chunk_to_send = std::move(chunk_queue_.front());
+            chunk_queue_.pop();
+            current_queue_size_ -= chunk_to_send.size();
+        }
+        data_channel_->send(reinterpret_cast<const std::byte*>(chunk_to_send.data()) , chunk_to_send.size());
     }
 }

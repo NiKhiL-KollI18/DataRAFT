@@ -1,6 +1,8 @@
 #include "webrtc_client.h"
+#include "globals.h"
 
 #include <iostream>
+#include <chrono>
 #include <nlohmann/json.hpp>
 
 using namespace std;
@@ -23,7 +25,13 @@ std::string WebRTCClient::create_room() {
     setup_webrtc();
     setup_signaling();
 
-    return room_promise_.get_future().get();
+    auto future = room_promise_.get_future();
+    while (raft_globals::is_running) {
+        if (future.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready) {
+            return future.get();
+        }
+    }
+    return "";
 }
 
 void WebRTCClient::join_room(const string &room_id) {
@@ -34,8 +42,13 @@ void WebRTCClient::join_room(const string &room_id) {
 }
 
 void WebRTCClient::wait_for_peer_connection() {
-
-    connection_promise_.get_future().get();
+    auto future = connection_promise_.get_future();
+    while (raft_globals::is_running) {
+        if (future.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready) {
+            future.get(); // Consume the void future
+            return;
+        }
+    }
 }
 
 shared_ptr<DataChannel> WebRTCClient::get_data_channel() {
@@ -67,8 +80,9 @@ void WebRTCClient::setup_signaling() {
     });
 
     websocket_->onClosed([]{});
+
     websocket_->onError([](const string &e) {
-        cout << "[LODGE] Error : " << e << endl;
+        raft_globals::shutdown("[LODGE] WebSocket Error: " + e);
     });
 
     websocket_->open(signaling_url_);
@@ -83,30 +97,25 @@ void WebRTCClient::handle_signaling_message(const string &message) {
             room_id_ = payload["room_id"].get<string>();
             room_promise_.set_value(room_id_);
         }
-
         else if (type == "error") {
-            cout << "\n[LODGE] Server error :" << payload["data"].get<string>() << endl;
-            exit(1);
+            raft_globals::shutdown("[LODGE] Server error: " + payload["data"].get<string>());
         }
-
         else if (type == "peer_joined" && is_sender_) {
-            cout << "[LODGE] Peer Detected! Initializing webrtc handshake" << endl;
+            cout << "[LODGE] Peer Detected! Initializing WebRTC handshake" << endl;
             setup_sender();
         }
-
         else if (type == "offer" && !is_sender_) {
             string sdp = payload["data"].get<string>();
             peer_connection_->setRemoteDescription(Description(sdp , "offer"));
             setup_receiver();
-            peer_connection_->setLocalDescription(); //Trigger Answer gathering
+            peer_connection_->setLocalDescription();
         }
-
         else if (type == "answer" && is_sender_) {
             string sdp = payload["data"].get<string>();
             peer_connection_->setRemoteDescription(Description(sdp , "answer"));
         }
-    }catch (exception &e) {
-        cout << "[LODGE] Protocol Error : " << e.what() << endl;
+    } catch (exception &e) {
+        raft_globals::shutdown(string("[LODGE] Protocol Error: ") + e.what());
     }
 }
 
@@ -118,7 +127,7 @@ void WebRTCClient::setup_webrtc() {
 
     peer_connection_->onStateChange([](PeerConnection::State state) {
         if (state == PeerConnection::State::Failed || state == PeerConnection::State::Closed) {
-            cout << "[WebRTC] Engine State : " << state << endl;
+            raft_globals::shutdown("WebRTC PeerConnection Failed or Closed unexpectedly.");
         }
     });
 
@@ -153,7 +162,7 @@ void WebRTCClient::setup_receiver() {
         data_channel_ = incoming_channel;
 
         data_channel_->onOpen([this]() {
-            cout << "[WebRTC] P2P channel Opened.Ready to receive..." << endl;
+            cout << "[WebRTC] P2P channel Opened. Ready to receive..." << endl;
             json msg;
             msg["type"] = "leave";
             websocket_->send(msg.dump());

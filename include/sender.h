@@ -2,7 +2,6 @@
 
 #include <fstream>
 #include <string>
-#include <functional>
 
 #include "protocol.h"
 #include "file_helper.h"
@@ -32,8 +31,6 @@ private:
     //network
     std::shared_ptr<rtc::DataChannel> data_channel_;
 
-    std::function<void()> on_transfer_complete_;
-
     //producer-consumer bridge
     std::queue<std::vector<char>> chunk_queue_;
     std::mutex queue_mutex_;
@@ -61,11 +58,12 @@ private:
 
     //internal logic
     void producer();
+    void flush_network_queue();
 
 public:
     Sender(const std::queue<std::string> &files, const std::string &base_dir,
            const std::shared_ptr<rtc::DataChannel> &data_channel,
-           bool is_encrypted, const std::string &password, std::function<void()> on_complete);
+           bool is_encrypted, const std::string &password);
 
     ~Sender();
 
