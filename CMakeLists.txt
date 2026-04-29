@@ -74,6 +74,7 @@ FetchContent_MakeAvailable(cli11)
 # 3. BUILD DATARAFT CORE ENGINE (DLL)
 # ==========================================
 add_library(dataraft_core SHARED
+        src/raft_globals_impl/raft_globals.cpp
         src/helper_impt/file_helper.cpp
         src/helper_impt/stream_encryptor.cpp
         src/helper_impt/stream_decryptor.cpp
@@ -83,8 +84,17 @@ add_library(dataraft_core SHARED
         src/impl/webrtc_client.cpp
         src/impl/sender/sender.cpp
         src/impl/receiver/receiver.cpp
+        src/impl/receiver/handle_password_auth.cpp
+        src/impl/receiver/process_block_footer.cpp
+        src/impl/receiver/process_data_chunk.cpp
+        src/impl/receiver/process_file_eof.cpp
+        src/impl/receiver/process_manifest.cpp
+        src/impl/receiver/process_metadata.cpp
+        src/impl/receiver/start_receiving.cpp
         src/impl/sender/producer.cpp
 )
+
+target_compile_definitions(dataraft_core PRIVATE DATARAFT_CORE_EXPORTS)
 
 # Using PUBLIC means anything that links to dataraft_core also gets these includes
 target_include_directories(dataraft_core PUBLIC

@@ -2,6 +2,7 @@
 
 #include "receiver.h"
 #include "globals.h"
+#include "sender.h"
 
 using namespace std;
 using namespace rtc;

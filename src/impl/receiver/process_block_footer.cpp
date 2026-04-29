@@ -1,5 +1,6 @@
 #include <filesystem>
 
+#include "sender.h"
 #include "receiver.h"
 #include "globals.h"
 

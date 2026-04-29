@@ -9,8 +9,6 @@
 #include "protocol.h"
 #include "rtc/rtc.hpp"
 
-constexpr int BLOCK_SIZE = 8 * 1024 * 1024; //8MB
-
 class FileReceiver {
 private:
     enum class ReceiverState {

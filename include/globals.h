@@ -3,8 +3,14 @@
 #include <atomic>
 #include <string>
 
-namespace raft_globals {
-    extern std::atomic<bool> is_running;
+#ifdef DATARAFT_CORE_EXPORTS
+#define DATARAFT_API __declspec(dllexport)
+#else
+#define DATARAFT_API __declspec(dllimport)
+#endif
 
-    void shutdown(const std::string& reason);
+namespace raft_globals {
+    extern DATARAFT_API std::atomic<bool> is_running;
+
+    DATARAFT_API void shutdown(const std::string& reason);
 }
