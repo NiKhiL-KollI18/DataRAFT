@@ -1,11 +1,6 @@
-// // #define _AMD64_
-// #define WIN32_LEAN_AND_MEAN
-// #include <windows.h>
-
 #include "file_helper.h"
 #include "config_manager.h"
 
-#include<iostream>
 #include <format>
 #include <openssl/evp.h>
 #include <filesystem>
@@ -16,14 +11,6 @@ constexpr size_t SHA256_BUFFER_SIZE = 64 * 1024 * 1024;
 using namespace std;
 
 namespace file_helper {
-
-    auto progress_callback_ = [](size_t processed , size_t total) {
-
-        string processed_size = format_file_size(processed);
-        string total_size = format_file_size(total);
-
-        cout << "\r[processed : ]" << processed_size << " / " << total_size << flush;
-    };
 
     std::string to_windows_long_path(const string &standard_filepath) {
         std::filesystem::path fs_path = std::filesystem::absolute(standard_filepath).lexically_normal();
@@ -141,9 +128,13 @@ namespace file_helper {
         return key;
     }
 
-    bool is_compressible(const string &extension) {
+    bool is_compressible(string extension) {
 
         if (extension.empty()) return true;
+
+        std::ranges::transform(extension , extension.begin() , [](unsigned char c) {
+            return std::tolower(c);
+        });
 
         static const unordered_set<string> incompressible_ext = {
             // Archives & Installers
@@ -221,8 +212,8 @@ namespace file_helper {
         }
     }
 
-    vector<uint8_t> derive_block_iv(const vector<uint8_t> &master_iv, uint64_t block_index) {
-        vector<uint8_t> block_iv(12);
+    array<uint8_t,12> derive_block_iv(const vector<uint8_t> &master_iv, uint64_t block_index) {
+        array<uint8_t , 12> block_iv{};
 
         memcpy(block_iv.data() , master_iv.data() , 12);
 
@@ -247,15 +238,14 @@ namespace file_helper {
             throw std::runtime_error("Target path does not exist: " + target_path);
         }
 
+        base_directory = target_fs.string();
+
         if (fs::is_regular_file(target_fs)) {
             // Single File
             pending_files.push(target_fs.string());
-            base_directory = target_fs.parent_path().string();
         }
         else if (fs::is_directory(target_fs)) {
             // Directory
-            base_directory = target_fs.parent_path().string();
-
             for (const auto& entry : fs::recursive_directory_iterator(target_fs)) {
                 if (fs::is_regular_file(entry.status())) {
                     pending_files.push(entry.path().string());

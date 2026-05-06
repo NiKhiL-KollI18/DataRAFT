@@ -24,6 +24,12 @@ void FileReceiver::process_manifest(const binary &data) {
 
     ui::print(Level::INFO , oss.str());
     oss.str(""); oss.clear();
+
+    ui::new_line();
+    string msg = string("Starting the file transfer. Transfer Mode :") +  (skip_existing_files_ ? "Skip Existing" : "Overwrite") + "...";
+    ui::print(Level::INFO , msg);
+    ui::new_line();
+
     if (manifest_.is_encrypted_) {
         current_state_ = ReceiverState::AWAITING_PASSWORD;
         handle_password_auth(); //detached thread

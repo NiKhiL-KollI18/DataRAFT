@@ -1,9 +1,8 @@
 #include <stdexcept>
 #include <zstd.h>
 
-
 #include "file_helper.h"
-
+#include "sender.h"
 
 using namespace std;
 
@@ -29,10 +28,12 @@ namespace file_helper {
         if (chunk.empty()) return;
 
         auto* dctx = static_cast<ZSTD_DCtx*>(ctx);
-
         ZSTD_inBuffer input = {chunk.data(), chunk.size(), 0};
 
         vector<char> decompressed_result;
+
+        decompressed_result.reserve(BUCKET_SIZE);
+
         bool has_more_output = true;
 
         while (input.pos < input.size || has_more_output) {
@@ -55,5 +56,4 @@ namespace file_helper {
 
         chunk = std::move(decompressed_result);
     }
-
 }

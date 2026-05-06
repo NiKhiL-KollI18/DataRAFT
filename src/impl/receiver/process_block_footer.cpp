@@ -1,3 +1,4 @@
+#include <array>
 #include <filesystem>
 
 #include "sender.h"
@@ -75,7 +76,7 @@ void FileReceiver::process_block_footer(vector<char> &&footer_data) {
     if (manifest_.is_encrypted_) {
         vector<uint8_t> master_iv(metadata_.master_crypto_iv_ , metadata_.master_crypto_iv_ + 12);
 
-        auto next_block_iv = file_helper::derive_block_iv(master_iv , current_block_index_);
+        std::array<uint8_t , 12> next_block_iv = file_helper::derive_block_iv(master_iv, current_block_index_);
         decryptor_->init_new_block(next_block_iv);
     }
 }

@@ -74,17 +74,30 @@ FetchContent_MakeAvailable(cli11)
 # 3. BUILD DATARAFT CORE ENGINE (DLL)
 # ==========================================
 add_library(dataraft_core SHARED
+
+        #Globals
         src/helper_impt/ui_manager_imp/ui_manager.cpp
         src/helper_impt/config_manager_impl/config_manager.cpp
         src/helper_impt/raft_globals_impl/raft_globals.cpp
+
+        #File Helpers
         src/helper_impt/file_helper_impl/file_helper.cpp
         src/helper_impt/file_helper_impl/stream_encryptor.cpp
         src/helper_impt/file_helper_impl/stream_decryptor.cpp
-        src/helper_impt/file_helper_impl/stream_compression.cpp
-        src/helper_impt/file_helper_impl/stream_decompresser.cpp
+        src/helper_impt/file_helper_impl/stream_compressor.cpp
+        src/helper_impt/file_helper_impl/stream_decompressor.cpp
         src/helper_impt/file_helper_impl/stream_hasher.cpp
+
+        #WebRTC
         src/impl/webrtc_client.cpp
+
+        #Sender
         src/impl/sender/sender.cpp
+        src/impl/sender/start_sending.cpp
+        src/impl/sender/producer.cpp
+        src/impl/sender/flush_network_queue.cpp
+
+        #Receiver
         src/impl/receiver/receiver.cpp
         src/impl/receiver/handle_password_auth.cpp
         src/impl/receiver/process_block_footer.cpp
@@ -93,7 +106,7 @@ add_library(dataraft_core SHARED
         src/impl/receiver/process_manifest.cpp
         src/impl/receiver/process_metadata.cpp
         src/impl/receiver/start_receiving.cpp
-        src/impl/sender/producer.cpp
+
 )
 
 target_compile_definitions(dataraft_core PRIVATE DATARAFT_CORE_EXPORTS)

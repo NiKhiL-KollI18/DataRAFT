@@ -22,7 +22,7 @@ private:
     static std::chrono::steady_clock::time_point last_drawn_time_;
     static int log_count_;
 
-    static void clear_line();
+    static std::ostringstream clear_line_stream();
     static std::string get_timestamp();
     static std::string smart_truncate(const std::string &raw_path , size_t max_width);
     static std::string format_file_size(uint64_t current_bytes , uint64_t total_bytes);

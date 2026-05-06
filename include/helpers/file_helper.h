@@ -30,7 +30,7 @@ namespace file_helper {
 
         std::vector<uint8_t> derive_key(const std::string& password , const std::vector<uint8_t>& salt);
 
-        std::vector<uint8_t> derive_block_iv(const std::vector<uint8_t> &master_iv , uint64_t block_index);
+        std::array<uint8_t , 12> derive_block_iv(const std::vector<uint8_t> &master_iv , uint64_t block_index);
 
         void build_transfer_queue(const std::string& target_path, std::queue<std::string>& pending_files, std::string& base_directory);
 
@@ -75,7 +75,7 @@ namespace file_helper {
 
                 [[nodiscard]]std::vector<uint8_t> generate_new_master_iv();
 
-                void init_new_block(const std::vector<uint8_t>& block_iv);
+                void init_new_block(const std::array<uint8_t , 12>& block_iv);
 
                 void encrypt_chunk(std::vector<char>& chunk);
 
@@ -100,7 +100,7 @@ namespace file_helper {
 
                 ~StreamDecryptor();
 
-                void init_new_block(const std::vector<uint8_t>& block_iv);
+                void init_new_block(const std::array<uint8_t , 12>& block_iv);
 
                 void decrypt_chunk(std::vector<char>& chunk);
 

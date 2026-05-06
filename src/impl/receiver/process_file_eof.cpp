@@ -38,7 +38,12 @@ void FileReceiver::process_file_eof() {
         current_file_count_++;
     } else {
         decryptor_.reset();
-        ui::print(Level::SUCCESS , "All Files in Batch Received successfully!");
+        if (manifest_.is_batch_directory_) {
+            ui::print(Level::SUCCESS , "All Files in Batch Received successfully!");
+        }
+        else {
+            ui::print(Level::SUCCESS , "File Received successfully!");
+        }
         raft_globals::shutdown(Level::SYSTEM , "");
     }
 }

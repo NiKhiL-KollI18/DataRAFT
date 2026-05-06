@@ -1,3 +1,4 @@
+#include <array>
 #include <iomanip>
 #include <stdexcept>
 #include <openssl/evp.h>
@@ -23,7 +24,7 @@ namespace file_helper {
         EVP_CIPHER_CTX_ctrl(static_cast<EVP_CIPHER_CTX*>(ctx) , EVP_CTRL_GCM_SET_IVLEN , 12 , nullptr);
     }
 
-    void StreamDecryptor::init_new_block(const vector<uint8_t> &block_iv) {
+    void StreamDecryptor::init_new_block(const array<uint8_t , 12> &block_iv) {
         auto* cipher_ctx = static_cast<EVP_CIPHER_CTX*>(ctx);
 
         if (EVP_DecryptInit_ex(cipher_ctx , nullptr , nullptr , derived_key_.data() , block_iv.data()) != 1) {
@@ -44,21 +45,19 @@ namespace file_helper {
         if (chunk.empty()) return;
 
         int out_len = 0;
-        std::vector<char> plaintext(chunk.size() + 16);
         auto* cipher_ctx = static_cast<EVP_CIPHER_CTX*>(ctx);
 
+        // ZERO-COPY IN-PLACE DECRYPTION
         if (EVP_DecryptUpdate(cipher_ctx,
-                              reinterpret_cast<unsigned char*>(plaintext.data()),
+                              reinterpret_cast<unsigned char*>(chunk.data()),
                               &out_len,
                               reinterpret_cast<const unsigned char*>(chunk.data()),
-                              static_cast<int>(chunk.size())) != 1) {
-            char err_msg[256];
-            ERR_error_string_n(ERR_get_error(), err_msg, sizeof(err_msg));
-            throw std::runtime_error("Fatal Error: OpenSSL failed to decrypt chunk." + string(err_msg));
-                              }
-
-        plaintext.resize(out_len);
-        chunk = std::move(plaintext);
+                              static_cast<int>(chunk.size())) != 1)
+            {
+                char err_msg[256];
+                ERR_error_string_n(ERR_get_error(), err_msg, sizeof(err_msg));
+                throw std::runtime_error(string("Fatal Error: OpenSSL failed to decrypt chunk. ") + err_msg);
+            }
     }
 
     [[nodiscard]] bool StreamDecryptor::verify_auth_tag(const vector<unsigned char> &expected_tag) const{

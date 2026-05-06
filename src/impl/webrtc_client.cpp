@@ -2,7 +2,6 @@
 #include "globals.h"
 #include "ui_manager.h"
 
-#include <iostream>
 #include <chrono>
 #include <nlohmann/json.hpp>
 
@@ -12,9 +11,17 @@ using namespace rtc;
 using json = nlohmann::json;
 using ui = UIManager;
 
-WebRTCClient::WebRTCClient(const string &signaling_url) {
+WebRTCClient::WebRTCClient(const string &signaling_url) : is_sender_(false) {
     signaling_url_ = signaling_url;
-    InitLogger(LogLevel::Warning);
+
+    //Redirecting webrtc warnings/errors to log files.
+    InitLogger(LogLevel::Warning, [](LogLevel level, const string &msg) {
+        string clean_msg = msg;
+        while (!clean_msg.empty() && (clean_msg.back() == '\n' || clean_msg.back() == '\r')) {
+            clean_msg.pop_back();
+        }
+        ui::log_internals("[WeRTC][libdatachannel]" + clean_msg);
+    });
 }
 
 WebRTCClient::~WebRTCClient() {
@@ -77,7 +84,7 @@ void WebRTCClient::setup_signaling() {
         websocket_->send(msg.dump());
     });
 
-    websocket_->onMessage([this](variant<binary , string> data) {
+    websocket_->onMessage([this](const variant<binary , string> &data) {
         if (holds_alternative<string>(data)) {
             handle_signaling_message(get<string>(data));
         }
@@ -156,13 +163,16 @@ void WebRTCClient::setup_sender() {
         json msg;
         msg["type"] = "leave";
         websocket_->send(msg.dump());
-
-        connection_promise_.set_value();
+        try {
+            connection_promise_.set_value();
+        }catch (std::future_error& e) {
+            //promise was already set.
+        }
     });
 }
 
 void WebRTCClient::setup_receiver() {
-    peer_connection_->onDataChannel([this](shared_ptr<DataChannel> incoming_channel) {
+    peer_connection_->onDataChannel([this](const shared_ptr<DataChannel> &incoming_channel) {
         data_channel_ = incoming_channel;
 
         data_channel_->onOpen([this]() {

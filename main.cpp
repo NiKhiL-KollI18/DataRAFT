@@ -1,4 +1,3 @@
-#include <iostream>
 #include <chrono>
 #include <queue>
 #include <string>
@@ -17,9 +16,8 @@ using ui = UIManager;
 using config = ConfigManager;
 
 int main(int argc , char** argv) {
-    // 1. BOOT UP THE CONFIGURATION ENGINE
-    config::init();
 
+    config::init();
     ui::init(config::get_log_filepath());
 
     CLI::App app{"DataRAFT - Data Streaming System"};
@@ -47,6 +45,9 @@ int main(int argc , char** argv) {
     // DYNAMIC DEFAULT: Uses the JSON config (which defaults to the OS Downloads folder)
     string out_path = config::get_default_download_dir();
     receive_cmd->add_option("--out,--at,-o" , out_path , "Directory to store received contents");
+
+    bool replace_existing = false;
+    receive_cmd->add_flag("--replace_existing_files,-r" , replace_existing , "Replace existing files instead of skipping them");
 
     //===============================
     // SETTINGS: raft get / raft set
@@ -153,7 +154,6 @@ int main(int argc , char** argv) {
         else if (receive_cmd->parsed()) {
             oss << "Connecting to room : {" << room_code << "}...";
             ui::print(Level::INFO , oss.str());
-            ui::new_line();
             oss.str(""); oss.clear(); //don't call UiManager::new_line because we want "sender details" to overwrite it.
 
             WebRTCClient webrtc_client(ConfigManager::get_signaling_server());
@@ -162,7 +162,9 @@ int main(int argc , char** argv) {
             webrtc_client.wait_for_peer_connection();
             auto data_channel_ = webrtc_client.get_data_channel();
 
-            FileReceiver receiver(data_channel_ , out_path , ConfigManager::get_skip_existing());
+            bool skip_existing = replace_existing? false : ConfigManager::get_skip_existing();
+
+            FileReceiver receiver(data_channel_ , out_path , skip_existing);
 
             receiver.start_receiving();
 

@@ -30,10 +30,13 @@ namespace file_helper {
         if (chunk.empty() && !is_last_chunk) return;
 
         auto* cctx = static_cast<ZSTD_CCtx*>(ctx);
-
         ZSTD_inBuffer input = {chunk.data(), chunk.size(), 0};
 
         vector<char> compressed_result;
+
+        //Pre-allocate the absolute maximum bound.
+        //This eliminates heap-resizing in the while loop!
+        compressed_result.reserve(ZSTD_compressBound(chunk.size()));
 
         ZSTD_EndDirective mode = is_last_chunk ? ZSTD_e_end : ZSTD_e_continue;
 

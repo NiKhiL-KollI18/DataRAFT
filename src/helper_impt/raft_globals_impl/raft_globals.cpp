@@ -9,10 +9,10 @@ namespace raft_globals {
 
     void shutdown(Level level , const string& reason) {
         bool expected = true;
+        UIManager::shutdown();
         if (!is_running.compare_exchange_strong(expected , false)) {
             return;
         }
-
         UIManager::new_line();
         UIManager::print(level , reason);
         UIManager::new_line();

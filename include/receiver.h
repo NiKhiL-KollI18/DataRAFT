@@ -37,8 +37,8 @@ private:
     std::chrono::steady_clock::time_point last_speed_calc_time_;
 
     //Handshake Structs
-    DataManifest manifest_;
-    FileMeta metadata_;
+    DataManifest manifest_{};
+    FileMeta metadata_{};
 
     //Progress Tracking
     uint64_t bytes_processed_count_ = 0;

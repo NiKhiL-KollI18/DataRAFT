@@ -1,3 +1,4 @@
+#include <array>
 #include <iomanip>
 #include <stdexcept>
 #include <openssl/evp.h>
@@ -48,7 +49,7 @@ namespace file_helper {
         return generate_random_bytes(12);
     }
 
-    void StreamEncryptor::init_new_block(const vector<uint8_t> &block_iv) {
+    void StreamEncryptor::init_new_block(const array<uint8_t , 12> &block_iv) {
         auto* cipher_ctx = static_cast<EVP_CIPHER_CTX*>(ctx);
 
         if (EVP_EncryptInit_ex(cipher_ctx , nullptr , nullptr , derived_key_.data() , block_iv.data()) != 1) {
@@ -61,23 +62,18 @@ namespace file_helper {
     void StreamEncryptor::encrypt_chunk(vector<char> &chunk) {
         if (chunk.empty()) return;
 
+        //Zero copy encryption
         int out_len = 0;
-
         auto* cipher_ctx = static_cast<EVP_CIPHER_CTX*>(ctx);
 
-        vector<char> ciphertext(chunk.size() + 16);
-
         if (EVP_EncryptUpdate(cipher_ctx ,
-            reinterpret_cast<unsigned char*>(ciphertext.data()) ,
+            reinterpret_cast<unsigned char*>(chunk.data()) ,
             &out_len ,
             reinterpret_cast<const unsigned char*>(chunk.data()) ,
             static_cast<int>(chunk.size())) != 1)
-            {
+        {
             throw runtime_error("Fatal Error: OpenSSL failed to encrypt chunk.");
-            }
-
-        ciphertext.resize(out_len);
-        chunk = std::move(ciphertext);
+        }
     }
 
     vector<uint8_t> StreamEncryptor::get_auth_tag() const {

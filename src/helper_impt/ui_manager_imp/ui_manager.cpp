@@ -39,8 +39,10 @@ string UIManager::get_timestamp() {
     return oss.str();
 }
 
-void UIManager::clear_line() {
-    cout << "\r\033[K" << std::flush;
+ostringstream UIManager::clear_line_stream() {
+    ostringstream oss;
+    oss << "\r\033[K";
+    return oss;
 }
 
 string UIManager::smart_truncate(const string &raw_path , size_t max_width) {
@@ -130,22 +132,22 @@ void UIManager::print(Level level, const string &message) {
     {
         lock_guard<mutex> lock(display_mutex_);
 
-        clear_line(); //Erase progress bar before printing a log
+        ostringstream oss = clear_line_stream(); //Erase progress bar before printing a log
 
         switch (level) {
             case Level::SUCCESS:
-                cout << GREEN << message << RESET; break;
+                oss << GREEN << message << RESET; break;
             case Level::WARNING:
-                cout << YELLOW << message << RESET; break;
+                oss << YELLOW << message << RESET; break;
             case Level::ERROR:
-                cout << RED << message << RESET; break;
+                oss << RED << message << RESET; break;
             case Level::SYSTEM:
-                cout << message << RESET; break;
+                oss << message << RESET; break;
             case Level::INFO:
-                cout << message << RESET; break;
+                oss << message << RESET; break;
             default: break;
         }
-        cout << flush;
+        cout << oss.str() << flush;
     }
 
     log_internals("[USER_FACING]" + message);
@@ -159,7 +161,7 @@ void UIManager::new_line() {
 string UIManager::prompt_input(const string &prompt_message) {
     lock_guard<mutex> lock(display_mutex_);
 
-    clear_line();
+    cout << "\r\033[K";
     cout << RESET << prompt_message <<" ";
     string input;
     cin >> input;
@@ -197,7 +199,7 @@ void UIManager::draw_progress_bar(uint64_t current_bytes, uint64_t total_bytes,
     string display_size = format_file_size(current_bytes , total_bytes);
     string display_speed = format_speed(speed_bps);
 
-    clear_line();
+    ostringstream oss = clear_line_stream();
 
     //--draw the UI--
 
@@ -205,26 +207,27 @@ void UIManager::draw_progress_bar(uint64_t current_bytes, uint64_t total_bytes,
     cout << "[" << RESET;
     for (int i = 0 ; i < bar_width ; i++) {
         if (i < pos) {
-            cout << "=" << RESET;
+            oss << "=" << RESET;
         }else if (i == pos) {
-            cout << ">" << RESET;
+            oss << ">" << RESET;
         }
         else {
-            cout << " " << RESET;
+            oss << " " << RESET;
         }
     }
-    cout << "]" << RESET << std::setw(3) << percentage << "% " << GRAY << "|" << RESET << " ";
+    oss << "]" << RESET << std::setw(3) << percentage << "% " << GRAY << "|" << RESET << " ";
 
     //Block 2: Bytes (15.2 / 300.0MB)
-    cout << display_size << " " << GRAY << "|" << RESET << " ";
+    oss << display_size << " " << GRAY << "|" << RESET << " ";
 
     //Block 3: Speed (12.5Mbps)
-    cout << display_speed << " " << GRAY << "|" << RESET << " ";
+    oss << display_speed << " " << GRAY << "|" << RESET << " ";
 
     //Block 4: File Count [1/5]
-    cout << "[" << curr_file << "/" << total_files << "] " << GRAY << "|" << RESET << " ";
+    oss << "[" << curr_file << "/" << total_files << "] " << GRAY << "|" << RESET << " ";
 
     //Block 5: File Name
-    cout << safe_name << flush;
+    oss << safe_name;
+    cout << oss.str() << flush;
 }
 

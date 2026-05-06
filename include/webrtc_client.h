@@ -11,7 +11,7 @@
 class WebRTCClient {
 private:
     //client state
-    bool is_sender_;
+    bool is_sender_{};
     std::string filepath_;
     std::string room_id_;
     std::string signaling_url_;

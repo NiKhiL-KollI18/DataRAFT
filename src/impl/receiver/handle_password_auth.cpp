@@ -29,7 +29,7 @@ void FileReceiver::handle_password_auth() {
         if (is_valid == true) {
         input_password = ui::prompt_input("Enter password: ");
         }else {
-        input_password = ui::prompt_input("Incorrect password. Try again: ");
+        input_password = ui::prompt_input("\033[A\r\033[KIncorrect password. Try again: ");
         }
 
         if (!raft_globals::is_running) break;
