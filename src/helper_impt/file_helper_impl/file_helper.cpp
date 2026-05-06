@@ -3,6 +3,7 @@
 // #include <windows.h>
 
 #include "file_helper.h"
+#include "config_manager.h"
 
 #include<iostream>
 #include <format>
@@ -202,6 +203,9 @@ namespace file_helper {
             strncpy(data_manifest.password_hash_sha256_, password_hash.c_str(), sizeof(data_manifest.password_hash_sha256_) - 1);
             memcpy(data_manifest.crypto_salt_, salt.data(), min(sizeof(data_manifest.crypto_salt_), salt.size()));
         }
+
+        string username = ConfigManager::get_username();
+        strncpy(data_manifest.sender_name_ , username.c_str() , sizeof(data_manifest.sender_name_) - 1);
     }
 
     void extract_transfer_ack(const string &filepath, TransferAck &response, bool accept_offer) {
@@ -226,5 +230,43 @@ namespace file_helper {
             block_iv[11 - i] ^= static_cast<uint8_t>((block_index >> (i * 8)) & 0xFF);
         }
         return block_iv;
+    }
+
+    void build_transfer_queue(const string &target_path, queue<string> &pending_files, string &base_directory) {
+        namespace fs = filesystem;
+
+        fs::path target_fs = fs::absolute(target_path).lexically_normal();
+
+        std::string path_str = target_fs.string();
+        while (!path_str.empty() && (path_str.back() == '/' || path_str.back() == '\\')) {
+            path_str.pop_back();
+        }
+        target_fs = fs::path(path_str);
+
+        if (!fs::exists(target_fs)) {
+            throw std::runtime_error("Target path does not exist: " + target_path);
+        }
+
+        if (fs::is_regular_file(target_fs)) {
+            // Single File
+            pending_files.push(target_fs.string());
+            base_directory = target_fs.parent_path().string();
+        }
+        else if (fs::is_directory(target_fs)) {
+            // Directory
+            base_directory = target_fs.parent_path().string();
+
+            for (const auto& entry : fs::recursive_directory_iterator(target_fs)) {
+                if (fs::is_regular_file(entry.status())) {
+                    pending_files.push(entry.path().string());
+                }
+            }
+        }
+
+        if (base_directory.empty()) base_directory = ".";
+
+        if (pending_files.empty()) {
+            throw std::runtime_error("No files found to send in the specified path.");
+        }
     }
 }

@@ -3,15 +3,17 @@
 #include "receiver.h"
 #include "globals.h"
 #include "sender.h"
+#include "ui_manager.h"
 
 using namespace std;
 using namespace rtc;
 
 namespace fs = std::filesystem;
+using ui = UIManager;
 
 void FileReceiver::process_metadata(const binary &data) {
     if (data.size() != sizeof(FileMeta)) {
-        raft_globals::shutdown("Received invalid metadata size. Aborting transfer...");
+        raft_globals::shutdown(Level::ERROR , "Received invalid metadata size. Aborting transfer...");
         send_ack(false, 0);
         return;
     }
@@ -32,7 +34,7 @@ void FileReceiver::process_metadata(const binary &data) {
             fs::create_directories(target_path.parent_path());
         }
     } catch (const fs::filesystem_error& e) {
-        raft_globals::shutdown(std::string("Could not create directories: ") + e.what());
+        raft_globals::shutdown(Level::ERROR , std::string("Could not create directories: ") + e.what());
         send_ack(false, 0);
         return;
     }
@@ -40,13 +42,16 @@ void FileReceiver::process_metadata(const binary &data) {
     //---1 . Check for complete files---
     if (fs::exists(final_filepath_)) {
         if (skip_existing_files_) {
-            cout << "[Receiver] File Already exists. Skipping : " << metadata_.relative_path_ << endl;
+            ui::log_internals("[Receiver] File Already exists. Skipping : " + string(metadata_.relative_path_));
+            global_bytes_transferred_ += fs::file_size(final_filepath_);
 
             if (manifest_.is_batch_directory_ && current_file_count_ < manifest_.total_file_count_) {
                 current_file_count_++;
             } else {
                 // We skipped the very last file in the batch!
-                raft_globals::shutdown("All files in batch already exist. Transfer complete!");
+                ui::new_line();
+                ui::print(Level::SUCCESS , "All files in batch already exist. Transfer complete!");
+                raft_globals::shutdown(Level::SYSTEM , "");
             }
 
             //send special flag to indicate skip
@@ -54,7 +59,7 @@ void FileReceiver::process_metadata(const binary &data) {
             return;
         }
         else {
-            cout << "[Receiver] Replace Enabled. Overwriting completed files..." << endl;
+            ui::log_internals("[Receiver] Replace Enable. Overwriting completed files...");
             fs::remove(final_filepath_);
         }
     }
@@ -73,20 +78,21 @@ void FileReceiver::process_metadata(const binary &data) {
             //snip the existing file to safe_byte_size
             fs::resize_file(current_filepath_ , safe_byte_size);
 
-            cout << "[Receiver] Found partial file. Resuming from block " << resume_block << endl;
+            ui::log_internals("[Receiver] Found partial file. Resuming from block " + to_string(resume_block));
+
         } else {
             //replace mode : delete partial file
             fs::remove(current_filepath_);
         }
     } else {
-        cout << "[Receiver] Starting new file download : " << metadata_.relative_path_ << endl;
+        ui::log_internals("[Receiver] Starting new file download : " + string(metadata_.relative_path_) + "");
     }
 
     //--3. Open file--
     //if resuming open in append mode, else truncate
     outfile_.open(current_filepath_ , ios::binary | (resume_block > 0 ? ios::app : ios::trunc));
     if (!outfile_.is_open()) {
-        raft_globals::shutdown("Cannot open file for writing : " + current_filepath_);
+        raft_globals::shutdown(Level::ERROR , "Cannot open file for writing : " + current_filepath_);
         send_ack(false, 0);
         return;
     }
@@ -94,6 +100,7 @@ void FileReceiver::process_metadata(const binary &data) {
     //sync state machine
     current_block_index_ = resume_block;
     bytes_processed_count_ = resume_block * BLOCK_SIZE;
+    global_bytes_transferred_ += (resume_block * BLOCK_SIZE);
 
     //--4. REFORMERS--
     hasher_.emplace();
@@ -108,6 +115,10 @@ void FileReceiver::process_metadata(const binary &data) {
 
         decryptor_->init_new_block(block_iv);
     }
+    total_bytes_received_ = resume_block * BLOCK_SIZE;
+    last_speed_calc_time_ = std::chrono::steady_clock::now();
+    bytes_received_since_last_calc_ = 0;
+    current_speed_bps_ = 0.0;
 
     //initializing data receiver
     send_ack(true , resume_block);

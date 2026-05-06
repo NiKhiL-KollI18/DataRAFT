@@ -74,13 +74,15 @@ FetchContent_MakeAvailable(cli11)
 # 3. BUILD DATARAFT CORE ENGINE (DLL)
 # ==========================================
 add_library(dataraft_core SHARED
-        src/raft_globals_impl/raft_globals.cpp
-        src/helper_impt/file_helper.cpp
-        src/helper_impt/stream_encryptor.cpp
-        src/helper_impt/stream_decryptor.cpp
-        src/helper_impt/stream_compression.cpp
-        src/helper_impt/stream_decompresser.cpp
-        src/helper_impt/stream_hasher.cpp
+        src/helper_impt/ui_manager_imp/ui_manager.cpp
+        src/helper_impt/config_manager_impl/config_manager.cpp
+        src/helper_impt/raft_globals_impl/raft_globals.cpp
+        src/helper_impt/file_helper_impl/file_helper.cpp
+        src/helper_impt/file_helper_impl/stream_encryptor.cpp
+        src/helper_impt/file_helper_impl/stream_decryptor.cpp
+        src/helper_impt/file_helper_impl/stream_compression.cpp
+        src/helper_impt/file_helper_impl/stream_decompresser.cpp
+        src/helper_impt/file_helper_impl/stream_hasher.cpp
         src/impl/webrtc_client.cpp
         src/impl/sender/sender.cpp
         src/impl/receiver/receiver.cpp
@@ -107,12 +109,12 @@ target_include_directories(dataraft_core PUBLIC
 target_link_libraries(dataraft_core
         PUBLIC
             datachannel
+        nlohmann_json::nlohmann_json
         PRIVATE
             ws2_32
             OpenSSL::SSL
             OpenSSL::Crypto
             libzstd_static
-            nlohmann_json::nlohmann_json
 )
 
 # ==========================================

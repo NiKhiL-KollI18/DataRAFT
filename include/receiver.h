@@ -29,6 +29,13 @@ private:
     std::string current_filepath_;
     std::string password_; //provided by user via CLI
 
+    //trackers
+    uint64_t global_bytes_transferred_ = 0;
+    uint64_t total_bytes_received_ = 0;
+    uint64_t bytes_received_since_last_calc_ = 0;
+    double current_speed_bps_ = 0.0;
+    std::chrono::steady_clock::time_point last_speed_calc_time_;
+
     //Handshake Structs
     DataManifest manifest_;
     FileMeta metadata_;

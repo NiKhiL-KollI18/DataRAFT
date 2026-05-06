@@ -2,11 +2,13 @@
 
 #include "receiver.h"
 #include "globals.h"
+#include "ui_manager.h"
 
 using namespace std;
 using namespace rtc;
 
 namespace fs = std::filesystem;
+using ui = UIManager;
 
 void FileReceiver::process_file_eof() {
     outfile_.close();
@@ -18,9 +20,10 @@ void FileReceiver::process_file_eof() {
         }
 
         fs::rename(current_filepath_ , final_filepath_);
-        cout << "[Receiver] File transfer complete : " << metadata_.relative_path_ << endl;
+        ui::log_internals("[Receiver] File transfer complete : " + string(metadata_.relative_path_));
+
     } catch (exception& e) {
-        raft_globals::shutdown(std::string("Failed to finalize .raftpath rename: ") + e.what());
+        raft_globals::shutdown(Level::ERROR , std::string("Failed to finalize .raftpath rename: ") + e.what());
         return;
     }
 
@@ -35,6 +38,7 @@ void FileReceiver::process_file_eof() {
         current_file_count_++;
     } else {
         decryptor_.reset();
-        raft_globals::shutdown("All Files in Batch Received successfully!");
+        ui::print(Level::SUCCESS , "All Files in Batch Received successfully!");
+        raft_globals::shutdown(Level::SYSTEM , "");
     }
 }

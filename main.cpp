@@ -1,31 +1,32 @@
 #include <iostream>
 #include <chrono>
-#include <filesystem>
 #include <queue>
+#include <string>
 
 #include "CLI11.hpp"
 
 #include "webrtc_client.h"
 #include "receiver.h"
 #include "sender.h"
-#include "globals.h"
+#include "include/helpers/globals.h"
+#include "config_manager.h"
+#include "ui_manager.h"
 
 using namespace std;
-namespace fs = std::filesystem;
-
-string prompt_for_password() {
-    string password;
-    cout << "Enter your password to secure the transfer" << endl;
-    cin >> password;
-    return password;
-}
+using ui = UIManager;
+using config = ConfigManager;
 
 int main(int argc , char** argv) {
+    // 1. BOOT UP THE CONFIGURATION ENGINE
+    config::init();
+
+    ui::init(config::get_log_filepath());
+
     CLI::App app{"DataRAFT - Data Streaming System"};
     app.require_subcommand(1);
 
     //===============================
-    //SEND 1. raft send
+    // SEND: raft send
     //===============================
     auto send_cmd = app.add_subcommand("send" , "Send a file or folder");
 
@@ -36,15 +37,30 @@ int main(int argc , char** argv) {
     send_cmd->add_flag("--secure,-s" , is_secure , "Lock the file with a password for sending");
 
     //===============================
-    //SEND 1. raft receive
+    // RECEIVE: raft receive
     //===============================
     auto receive_cmd = app.add_subcommand("receive" , "Receive a file or folder");
 
     string room_code;
     receive_cmd->add_option("code" , room_code , "The room id provided by the sender.")->required();
 
-    string out_path = "./";//default directory
+    // DYNAMIC DEFAULT: Uses the JSON config (which defaults to the OS Downloads folder)
+    string out_path = config::get_default_download_dir();
     receive_cmd->add_option("--out,--at,-o" , out_path , "Directory to store received contents");
+
+    //===============================
+    // SETTINGS: raft get / raft set
+    //===============================
+    auto get_cmd = app.add_subcommand("get", "View configuration settings");
+    string get_key;
+    get_cmd->add_option("key", get_key, "Specific setting to retrieve");
+
+    auto set_cmd = app.add_subcommand("set", "Update configuration settings");
+    string set_key, set_value;
+    bool set_default = false;
+    set_cmd->add_option("key", set_key, "The setting to change")->required();
+    set_cmd->add_option("value", set_value, "The new value");
+    set_cmd->add_flag("--default", set_default, "Restore setting to default");
 
     // ==========================================
     // PARSE THE COMMANDS
@@ -53,78 +69,81 @@ int main(int argc , char** argv) {
     CLI11_PARSE(app , argc , argv);
 
     try {
-        if (send_cmd->parsed()) {
-            cout << "[DataRAFT] Preparing to send : " << target_path << endl;
+        ostringstream oss;
+        // --- HANDLE CONFIGURATION COMMANDS FIRST ---
+        if (get_cmd->parsed()) {
+            if (get_key.empty()) {
+                oss << config::get_all();
+            } else {
+                oss << config::get(get_key);
+            }
+            ui::print(Level::INFO , oss.str());
+            ui::new_line();
+            oss.str(""); oss.clear();
+            return 0;
+        }
+        else if (set_cmd->parsed()) {
+            if (set_default && set_key == "all") {
+                config::reset_all();
+            } else if (set_default) {
+                config::set(set_key, "", true);
+            } else {
+                if (set_value.empty()) throw std::runtime_error("Must provide a value to set.");
+                config::set(set_key, set_value, false);
+            }
+            return 0;
+        }
 
-            // ==========================================
-            // PHASE 2: QUEUE BUILDING & PATH RESOLUTION
-            // ==========================================
+        // --- HANDLE TRANSFER COMMANDS ---
+        else if (send_cmd->parsed()) {
+
+            oss << "Preparing to send " << target_path << "...";
+            ui::print(Level::INFO , oss.str());
+            ui::new_line();
+            oss.str(""); oss.clear();
+
             std::queue<std::string> pending_files;
             std::string base_directory;
 
-            // 1. Force absolute path and normalize ALL slashes to OS standard
-            fs::path target_fs = fs::absolute(target_path).lexically_normal();
+            file_helper::build_transfer_queue(target_path, pending_files, base_directory);
 
-            // 2. Physically strip trailing slashes to guarantee exact parent calculation
-            std::string path_str = target_fs.string();
-            while (!path_str.empty() && (path_str.back() == '/' || path_str.back() == '\\')) {
-                path_str.pop_back();
-            }
-            target_fs = fs::path(path_str);
+            oss << "Found " << pending_files.size() << " file(s) to transfer.";
+            ui::print(Level::INFO , oss.str());
+            ui::new_line();
+            oss.str(""); oss.clear();
 
-            if (!fs::exists(target_fs)) {
-                throw std::runtime_error("Target path does not exist: " + target_path);
-            }
-
-            if (fs::is_regular_file(target_fs)) {
-                // Single File
-                pending_files.push(target_fs.string());
-                base_directory = target_fs.parent_path().string();
-            }
-            else if (fs::is_directory(target_fs)) {
-                // Directory: The parent of TestNastyFolder is exactly testingIN
-                base_directory = target_fs.parent_path().string();
-
-                for (const auto& entry : fs::recursive_directory_iterator(target_fs)) {
-                    if (fs::is_regular_file(entry.status())) {
-                        pending_files.push(entry.path().string());
-                    }
-                }
-            }
-
-            if (base_directory.empty()) base_directory = ".";
-
-            if (pending_files.empty()) {
-                throw std::runtime_error("No files found to send in the specified path.");
-            }
-
-            cout << "[DataRAFT] Found " << pending_files.size() << " file(s) to transfer." << endl;
-
-            // ==========================================
-            // PROCEED WITH WEBRTC HANDSHAKE
-            // ==========================================
             string password;
             if (is_secure) {
-                password = prompt_for_password();
+                ui::print(Level::INFO , "Enter a password to secure the file transfer.");
+                ui::new_line();
+                password = ui::prompt_input("Enter password: ");
             }
 
-            WebRTCClient webrtc_client_("wss://lodge-oesc.onrender.com/signal");
+            WebRTCClient webrtc_client_(ConfigManager::get_signaling_server());
 
             string generated_room_code = webrtc_client_.create_room();
 
-            cout << "\n==============================================" << endl;
-            cout << "Share the command with receiver : " << endl;
-            cout << "raft receive " << generated_room_code << endl;
-            cout << "\n==============================================" << endl;
-
-            // Block until the receiver has connected...
+            oss << "==============================================\n"
+                << "Share the command with receiver : \n"
+                << "raft receive " << generated_room_code << "\n"
+                << "==============================================\n";
+            ui::print(Level::INFO , oss.str());
+            ui::new_line();
+            oss.str(""); oss.clear();
 
             webrtc_client_.wait_for_peer_connection();
             auto data_channel_ = webrtc_client_.get_data_channel();
-            cout << "Waiting for receiver..." << endl;
 
-            // Instantiating the new Phase 2 Sender!
+            oss << "Waiting for receiver...";
+            ui::print(Level::INFO , oss.str());
+            oss.str(""); oss.clear(); //don't call UiManager::new_line because we want the "connected" message to overwrite it.
+
             Sender sender(pending_files, base_directory, data_channel_, is_secure, password);
+
+            oss << "Connected to receiver. Starting transfer...";
+            ui::print(Level::INFO , oss.str());
+            oss.str(""); oss.clear(); //don't call UiManager::new_line because we want "progress bar" to overwrite it.
+
             sender.start_sending();
 
             while (raft_globals::is_running) {
@@ -132,15 +151,18 @@ int main(int argc , char** argv) {
             }
         }
         else if (receive_cmd->parsed()) {
-            cout << "[DataRAFT] Connecting to room : {" << room_code << "}..." << endl;
+            oss << "Connecting to room : {" << room_code << "}...";
+            ui::print(Level::INFO , oss.str());
+            ui::new_line();
+            oss.str(""); oss.clear(); //don't call UiManager::new_line because we want "sender details" to overwrite it.
 
-            WebRTCClient webrtc_client("wss://lodge-oesc.onrender.com/signal");
+            WebRTCClient webrtc_client(ConfigManager::get_signaling_server());
             webrtc_client.join_room(room_code);
 
             webrtc_client.wait_for_peer_connection();
             auto data_channel_ = webrtc_client.get_data_channel();
 
-            FileReceiver receiver(data_channel_ , out_path , true);
+            FileReceiver receiver(data_channel_ , out_path , ConfigManager::get_skip_existing());
 
             receiver.start_receiving();
 
@@ -149,7 +171,7 @@ int main(int argc , char** argv) {
             }
         }
     } catch (exception& e) {
-        raft_globals::shutdown(string("Fatal Setup Error:") + e.what()) ;
+        raft_globals::shutdown(Level::ERROR , string("Fatal Setup Error! ") + e.what());
         return 1;
     }
     return 0;

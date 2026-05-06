@@ -1,16 +1,24 @@
 #include "globals.h"
 #include "sender.h"
+#include "ui_manager.h"
 
 using namespace std;
 using namespace rtc;
+using ui = UIManager;
 
 void Sender::producer() {
-    cout << "[Sender] Producer thread is active..." << endl;
+    ui::log_internals("[Sender] Producer thread is active");
+
+    total_bytes_sent_ = resume_from_block_ * BLOCK_SIZE;
+    last_speed_calc_time_ = std::chrono::steady_clock::now();
+    bytes_sent_since_last_calc_ = 0;
+    current_speed_bps_ = 0.0;
 
     try {
         if (resume_from_block_ > 0) {
             infile_.seekg(static_cast<long long>(resume_from_block_) * BLOCK_SIZE , ios::beg);
-            cout << "[Sender] Resuming from block " << resume_from_block_ << endl;
+            ui::log_internals("[Sender] Resuming from block " + to_string(resume_from_block_));
+            global_bytes_transferred_ += resume_from_block_ * BLOCK_SIZE;
         }
 
         uint64_t current_block_index = resume_from_block_;
@@ -81,7 +89,7 @@ void Sender::producer() {
 
             // --Block finalization--
             if (bytes_read_for_block > 0) {
-                BlockFooter footer;
+                BlockFooter footer{};
                 memset(&footer , 0 , sizeof(BlockFooter));
 
                 footer.block_index_ = current_block_index;
@@ -118,10 +126,10 @@ void Sender::producer() {
         } // EOF of entire file (or aborted)
 
         if (raft_globals::is_running) {
-            cout << "[Sender] Disk read completed. Sending EOF signal..." << endl;
+            ui::log_internals("[Sender] Disk read completed. Sending EOF signal...");
 
-            vector<char> eof_buffer = { static_cast<char>(PacketType::FILE_EOF)};
             {
+                vector<char> eof_buffer = { static_cast<char>(PacketType::FILE_EOF)};
                 lock_guard<mutex> lock(queue_mutex_);
                 current_queue_size_ += eof_buffer.size();
                 chunk_queue_.push(std::move(eof_buffer));
@@ -131,15 +139,22 @@ void Sender::producer() {
             flush_network_queue();
 
             is_file_reading_completed_ = true;
-            cout << "[Sender] File read completed. Awaiting ACK from receiver..." << endl;
+            ui::log_internals("[Sender] File read completed. Awaiting ACK from receiver...");
         }
 
     } catch (exception &e) {
-        raft_globals::shutdown(std::string("Producer thread crashed: ") + e.what());
+        raft_globals::shutdown(Level::ERROR , string("Producer thread crashed: ") + e.what());
     }
 }
 
 void Sender::flush_network_queue() {
+
+    if (!send_mutex_.try_lock()) {
+        return;
+    }
+
+    lock_guard<mutex> master_lock(send_mutex_, std::adopt_lock);
+
     while (raft_globals::is_running) {
         vector<char> chunk_to_send;
         {
@@ -151,6 +166,31 @@ void Sender::flush_network_queue() {
             chunk_queue_.pop();
             current_queue_size_ -= chunk_to_send.size();
         }
-        data_channel_->send(reinterpret_cast<const std::byte*>(chunk_to_send.data()) , chunk_to_send.size());
+
+        size_t chunk_size = chunk_to_send.size();
+
+        // Strictly sequenced send!
+        data_channel_->send(reinterpret_cast<const std::byte*>(chunk_to_send.data()) , chunk_size);
+
+        // --- Progress & speed math ---
+        total_bytes_sent_ += chunk_size;
+        bytes_sent_since_last_calc_ += chunk_size;
+        global_bytes_transferred_ += chunk_size;
+
+        auto now = std::chrono::steady_clock::now();
+        auto time_diff_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_speed_calc_time_).count();
+
+        // Recalculate speed every 500ms
+        if (time_diff_ms >= 500) {
+            current_speed_bps_ = static_cast<double>(bytes_sent_since_last_calc_) / (time_diff_ms / 1000.0);
+
+            bytes_sent_since_last_calc_ = 0;
+            last_speed_calc_time_ = now;
+        }
+
+        uint64_t current_file_num = total_files_in_batch_ - pending_files_.size();
+
+        ui::draw_progress_bar(global_bytes_transferred_ , data_manifest_.total_folder_size_ ,
+            current_file_num , total_files_in_batch_ , current_filepath_ , current_speed_bps_);
     }
 }

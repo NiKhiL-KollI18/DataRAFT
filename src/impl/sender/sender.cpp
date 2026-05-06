@@ -1,5 +1,7 @@
 #include "sender.h"
 #include "globals.h"
+#include "config_manager.h"
+#include "ui_manager.h"
 
 #include <nlohmann/json_fwd.hpp>
 #include <utility>
@@ -8,13 +10,15 @@ using namespace rtc;
 using namespace std;
 
 using json = nlohmann::json;
+using ui = UIManager;
 
-Sender::Sender(const queue<string> &files, const string &base_dir,
+Sender::Sender(const queue<string> &files, string base_dir,
                const shared_ptr<DataChannel> &data_channel,
                bool is_encrypted, const string &password)
-        : pending_files_(files), base_directory_(base_dir), data_channel_(data_channel) {
-
+        : pending_files_(files), base_directory_(std::move(base_dir)), data_channel_(data_channel) {
     total_files_in_batch_ = pending_files_.size();
+
+    MAX_QUEUE_SIZE = ConfigManager::get_buffer_limit();
 
     current_filepath_ = pending_files_.front();
     pending_files_.pop();
@@ -23,12 +27,12 @@ Sender::Sender(const queue<string> &files, const string &base_dir,
 
     infile_.open(safe_read_path , ios::binary);
     if (!infile_.is_open()) {
-        throw runtime_error("Fatal Error : Cannot open the file ->" + safe_read_path);
+        throw runtime_error("Fatal Error! Cannot open the file ->" + safe_read_path);
     }
 
     vector<uint8_t> salt;
     vector<uint8_t> master_iv;
-    string pass_hash = "";
+    string pass_hash;
 
     file_helper::extract_metadata(current_filepath_ , base_directory_ , metadata_);
 
@@ -42,9 +46,8 @@ Sender::Sender(const queue<string> &files, const string &base_dir,
         master_iv = encryptor_->generate_new_master_iv();
         memcpy(metadata_.master_crypto_iv_ , master_iv.data() , 12);
     }
-
     memset(&data_manifest_, 0, sizeof(DataManifest));
-    file_helper::create_data_manifest(data_manifest_ , current_filepath_ , is_encrypted, pass_hash , salt);
+    file_helper::create_data_manifest(data_manifest_ , base_directory_ , is_encrypted, pass_hash , salt);
 
     data_manifest_.total_file_count_ = total_files_in_batch_;
     data_manifest_.is_batch_directory_ = (total_files_in_batch_ > 1);
@@ -63,7 +66,7 @@ Sender::~Sender() {
 }
 
 void Sender::start_sending() {
-    cout << "[Sender] Arming network callbacks and initializing handshake..." << endl;
+    ui::log_internals("[Sender] Arming network callbacks and initializing handshake...");
 
     //--IMPLICIT STATE MACHINE--
     data_channel_->onMessage([this](variant<binary , string> data) {
@@ -74,17 +77,16 @@ void Sender::start_sending() {
             auto raw_data = get<binary>(data);
 
             if (raw_data.size() == sizeof(TransferAck)) {
-                TransferAck ack;
+                TransferAck ack{};
                 memcpy(&ack , raw_data.data() , sizeof(TransferAck));
 
                 if (current_state_ == SenderState::WAITING_MANIFEST_ACK) {
                     if (!ack.accept_transfer_) {
-                        cout << "[Sender] Receiver rejected the manifest. Aborting." << endl;
+                        ui::log_internals("[Sender] Receiver rejected the manifest. Aborting.");
                         current_state_ = SenderState::DONE;
                         return;
                     }
-
-                    cout << "[Sender] Manifest accepted , Sending file metadata..." << endl;
+                    ui::log_internals("[Sender] Manifest accepted , Sending file metadata...");
 
                     current_state_ = SenderState::WAITING_META_ACK;
 
@@ -92,15 +94,15 @@ void Sender::start_sending() {
                 }
                 else if (current_state_ == SenderState::WAITING_META_ACK) {
                     if (!ack.accept_transfer_) {
-                        // THE FIX: Updated the logging to correctly reflect the metadata rejection
-                        cout << "[Sender] Receiver rejected the metadata/file. Aborting." << endl;
+                        ui::log_internals("[Sender] Receiver rejected the metadata/file. Aborting.");
                         current_state_ = SenderState::DONE;
                         return;
                     }
 
                     //--SKIP LOGIC--
                     if (ack.resume_from_block_ == ULLONG_MAX) {
-                        cout << "[Sender] SKIPPING..." << endl;
+                        ui::log_internals("[Sender] Receiver requested to skip the file. Skipping...");
+                        global_bytes_transferred_ += metadata_.file_size_;
                         infile_.close();
 
                         // Execute Batch Loop
@@ -111,7 +113,7 @@ void Sender::start_sending() {
                             string safe_read_path = file_helper::to_windows_long_path(current_filepath_);
                             infile_.open(safe_read_path, ios::binary);
                             if (!infile_.is_open()) {
-                                raft_globals::shutdown("Cannot open next file in batch: " + safe_read_path);
+                                raft_globals::shutdown(Level::ERROR , "Cannot open next file in batch: " + safe_read_path);
                                 current_state_ = SenderState::DONE;
                                 return;
                             }
@@ -123,11 +125,12 @@ void Sender::start_sending() {
                                 auto new_master_iv = encryptor_->generate_new_master_iv();
                                 memcpy(metadata_.master_crypto_iv_, new_master_iv.data(), 12);
                             }
-                            cout << "[Sender] Loading next file in batch: " << current_filepath_ << endl;
+                            ui::log_internals("[Sender] Loading next file in batch: " + current_filepath_);
 
                             data_channel_->send(reinterpret_cast<const std::byte*>(&metadata_), sizeof(FileMeta));
                         }else {
-                            raft_globals::shutdown("Batch transfer complete! All files sent successfully.");
+                            ui::print(Level::SUCCESS , "Batch transfer complete! All files sent successfully.");
+                            raft_globals::shutdown(Level::SYSTEM , "");
                             current_state_ = SenderState::DONE;
                         }
                         return;
@@ -135,7 +138,8 @@ void Sender::start_sending() {
 
                     //--NORMAL TRANSFER
                     resume_from_block_ = ack.resume_from_block_;
-                    cout << "[Sender] Metadata accepted. Sending from byte : " << resume_from_block_ << endl;
+                    ui::log_internals( "[Sender] Metadata accepted. Sending from byte : "
+                        + to_string(resume_from_block_ ));
 
                     current_state_ = SenderState::TRANSFERRING;
 
@@ -143,7 +147,7 @@ void Sender::start_sending() {
                 }
                 else if (current_state_ == SenderState::TRANSFERRING) {
                     if (ack.accept_transfer_) {
-                        cout << "[Sender] File completed successfully!" << endl;
+                        ui::log_internals("[Sender] File completed successfully!");
 
                         // Clean up the finished producer thread
                         if (producer_thread_.joinable()) {
@@ -160,7 +164,7 @@ void Sender::start_sending() {
 
                             infile_.open(safe_read_path, ios::binary);
                             if (!infile_.is_open()) {
-                                raft_globals::shutdown("Cannot open next file in batch: " + safe_read_path);
+                                raft_globals::shutdown(Level::ERROR , "Cannot open next file in batch: " + safe_read_path);
                                 current_state_ = SenderState::DONE;
                                 return;
                             }
@@ -174,13 +178,14 @@ void Sender::start_sending() {
                                 memcpy(metadata_.master_crypto_iv_, new_master_iv.data(), 12);
                             }
 
-                            cout << "[Sender] Loading next file in batch: " << current_filepath_ << endl;
+                            ui::log_internals("[Sender] Loading next file in batch: " + current_filepath_);
                             current_state_ = SenderState::WAITING_META_ACK;
                             data_channel_->send(reinterpret_cast<const std::byte*>(&metadata_), sizeof(FileMeta));
 
                         } else {
                             // The queue is empty.
-                            raft_globals::shutdown("Batch transfer complete! All files sent successfully.");
+                            ui::print(Level::SUCCESS , "Batch transfer complete! All files sent successfully.");
+                            raft_globals::shutdown(Level::SYSTEM , "");
                             current_state_ = SenderState::DONE;
                         }
                     }
@@ -198,7 +203,7 @@ void Sender::start_sending() {
             flush_network_queue();
             queue_cv_.notify_one();
         }catch (exception& e) {
-            raft_globals::shutdown(string("Network buffer callback crashed : ") + e.what());
+            raft_globals::shutdown(Level::ERROR , string("Network buffer callback crashed : ") + e.what());
         }
     });
 

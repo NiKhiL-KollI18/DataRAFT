@@ -36,13 +36,13 @@ struct TransferAck {
 };
 
 struct DataManifest {
+    char sender_name_[128];
     bool is_batch_directory_;
 
     char folder_name_[256];
     uint64_t total_folder_size_;
     uint32_t total_file_count_;
 
-    char sender_name_[64];
     bool is_encrypted_;
     char password_hash_sha256_[65];
 

@@ -8,7 +8,6 @@
 #include "rtc/rtc.hpp"
 #include<queue>
 
-constexpr int MAX_QUEUE_SIZE = 16 * 1024 * 1024; //16MB
 constexpr int BUCKET_SIZE = (32 * 1024) - 1;//32KB - 1 , to add footer at the end
 constexpr int BLOCK_SIZE = 8 * 1024 * 1024; //8MB
 
@@ -20,13 +19,22 @@ private:
     std::queue<std::string> pending_files_;
     uint32_t total_files_in_batch_ = 0;
 
+    uint64_t MAX_QUEUE_SIZE;
+
     std::string password_;
     std::ifstream infile_;
     FileMeta metadata_{};
 
     uint64_t resume_from_block_ = 0;
 
-    DataManifest data_manifest_;
+    DataManifest data_manifest_{};
+
+    //trackers
+    uint64_t global_bytes_transferred_ = 0;
+    uint64_t total_bytes_sent_ = 0;
+    uint64_t bytes_sent_since_last_calc_ = 0;
+    double current_speed_bps_ = 0.0;
+    std::chrono::steady_clock::time_point last_speed_calc_time_;
 
     //network
     std::shared_ptr<rtc::DataChannel> data_channel_;
@@ -34,6 +42,7 @@ private:
     //producer-consumer bridge
     std::queue<std::vector<char>> chunk_queue_;
     std::mutex queue_mutex_;
+    std::mutex send_mutex_;
     std::condition_variable queue_cv_;
 
     size_t current_queue_size_ = 0;
@@ -61,7 +70,7 @@ private:
     void flush_network_queue();
 
 public:
-    Sender(const std::queue<std::string> &files, const std::string &base_dir,
+    Sender(const std::queue<std::string> &files, std::string base_dir,
            const std::shared_ptr<rtc::DataChannel> &data_channel,
            bool is_encrypted, const std::string &password);
 

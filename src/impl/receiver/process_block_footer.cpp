@@ -3,15 +3,17 @@
 #include "sender.h"
 #include "receiver.h"
 #include "globals.h"
+#include "ui_manager.h"
 
 using namespace std;
 using namespace rtc;
 
 namespace fs = std::filesystem;
+using ui = UIManager;
 
 void FileReceiver::process_block_footer(vector<char> &&footer_data) {
     if (footer_data.size() != sizeof(BlockFooter)) {
-        raft_globals::shutdown("Received corrupted block footer (Network Desync).");
+        raft_globals::shutdown(Level::ERROR , "Received corrupted block footer (Network Desync).");
         return;
     }
 
@@ -24,7 +26,7 @@ void FileReceiver::process_block_footer(vector<char> &&footer_data) {
     if (decryptor_) {
         vector<uint8_t> expected_tag(footer.auth_tag_ , footer.auth_tag_ + 16);
         if (!decryptor_->verify_auth_tag(expected_tag)) {
-            cout << "\n[SECURITY ALERT] Block " << footer.block_index_ << " AES-GCM Auth Tag mismatch!" << endl;
+            ui::log_internals("[SECURITY ALERT] Block " + to_string(footer.block_index_) + " AES-GCM Auth Tag mismatch!");
             is_valid = false;
         }
     }
@@ -33,15 +35,15 @@ void FileReceiver::process_block_footer(vector<char> &&footer_data) {
     if (hasher_) {
         string calculated_hash = hasher_->get_sha256_hash();
         if (calculated_hash != footer.checksum_sha256_) {
-            cout << "\n[SECURITY ALERT] Block " << footer.block_index_ << " SHA-256 Checksum mismatch!" << endl;
+            ui::log_internals("[SECURITY ALERT] Block" + to_string(footer.block_index_) + " SHA-256 Checksum mismatch!");
             is_valid = false;
         }
     }
 
     //--4. Corruption Handling
     if (!is_valid) {
-        cout << "[Receiver] Data corruption detected. Rolling back to last safe block: " << (footer.block_index_ == 0 ? 0 : footer.block_index_ - 1) << endl;
-
+        ui::log_internals("[Receiver] Data corruption detected. Rolling back to last safe block:" +
+            to_string(footer.block_index_ == 0 ? 0 : footer.block_index_ - 1));
         if (outfile_.is_open()) {
             outfile_.close();
         }
@@ -52,12 +54,12 @@ void FileReceiver::process_block_footer(vector<char> &&footer_data) {
         try {
             fs::resize_file(current_filepath_ , safe_byte_size);
         } catch (exception& e) {
-            raft_globals::shutdown(std::string("Cannot truncate corrupted file: ") + e.what());
+            raft_globals::shutdown(Level::ERROR , std::string("Cannot truncate corrupted file: ") + e.what());
             return;
         }
 
         send_ack(false , current_block_index_);
-        raft_globals::shutdown("Transfer aborted due to block corruption. Restart transfer to resume safely.");
+        raft_globals::shutdown(Level::ERROR , "Transfer aborted due to block corruption. Restart transfer to resume safely.");
         return;
     }
 

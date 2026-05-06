@@ -1,17 +1,17 @@
 #include "receiver.h"
 #include "globals.h"
 #include "webrtc_client.h"
+#include "ui_manager.h"
 
 #include <filesystem>
-#include <iostream>
 
 using namespace std;
 using namespace rtc;
 namespace fs = std::filesystem;
-
+using ui = UIManager;
 
 void FileReceiver::start_receiving() {
-    cout << "[Receiver] listening for incoming transfers..." << endl;
+    ui::log_internals("[Receiver] listening for incoming transfers...");
 
     data_channel_->onMessage([this](variant<binary , string> data) {
         if (!raft_globals::is_running) return;
@@ -49,12 +49,12 @@ void FileReceiver::start_receiving() {
                             process_data_chunks(std::move(chunk));
                         }
                         else if (footer_flag == PacketType::BLOCK_FOOTER) {
-                            //Hit 8MB Block boundary! Verify this block's integrity
+                            //Hit the 8MB Block boundary! Verify this block's integrity
                             process_block_footer(std::move(chunk));
                         }
                         else if (footer_flag == PacketType::FILE_EOF) {
                             //end of the entire file.
-                            cout << "[Receiver] Found EOF footer" << endl;
+                            ui::log_internals("[Receiver] Found EOF footer");
                             process_file_eof();
                         }
                     }
@@ -62,7 +62,7 @@ void FileReceiver::start_receiving() {
                 }
             }
         } catch (const std::exception& e) {
-            raft_globals::shutdown(std::string("Receiver pipeline crashed: ") + e.what());
+            raft_globals::shutdown(Level::ERROR , std::string("Receiver pipeline crashed: ") + e.what());
         }
     });
 }

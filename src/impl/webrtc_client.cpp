@@ -1,5 +1,6 @@
 #include "webrtc_client.h"
 #include "globals.h"
+#include "ui_manager.h"
 
 #include <iostream>
 #include <chrono>
@@ -9,6 +10,7 @@ using namespace std;
 using namespace rtc;
 
 using json = nlohmann::json;
+using ui = UIManager;
 
 WebRTCClient::WebRTCClient(const string &signaling_url) {
     signaling_url_ = signaling_url;
@@ -63,12 +65,14 @@ void WebRTCClient::setup_signaling() {
         if (is_sender_) {
             msg["type"] = "create";
             msg["guest_count"] = 2;
-            cout << "[LODGE] Requesting for room coordinates..." << endl;
+            ui::print(Level::INFO , "Creating a room...");
+            ui::log_internals("[LODGE] Requesting for room coordinates...");
         }
         else {
             msg["type"] = "join";
             msg["room_id"] = room_id_;
-            cout << "[LODGE] Requesting to join room : {" << room_id_ << "}..." <<  endl;
+            ui::print(Level::INFO , "Joining room : " + room_id_);
+            ui::log_internals("[LODGE] Requesting to join room : {" + room_id_ + "}...");
         }
         websocket_->send(msg.dump());
     });
@@ -82,7 +86,7 @@ void WebRTCClient::setup_signaling() {
     websocket_->onClosed([]{});
 
     websocket_->onError([](const string &e) {
-        raft_globals::shutdown("[LODGE] WebSocket Error: " + e);
+        raft_globals::shutdown(Level::ERROR , "WebSocket Error: " + e);
     });
 
     websocket_->open(signaling_url_);
@@ -98,10 +102,10 @@ void WebRTCClient::handle_signaling_message(const string &message) {
             room_promise_.set_value(room_id_);
         }
         else if (type == "error") {
-            raft_globals::shutdown("[LODGE] Server error: " + payload["data"].get<string>());
+            raft_globals::shutdown(Level::ERROR , "Server error: " + payload["data"].get<string>());
         }
         else if (type == "peer_joined" && is_sender_) {
-            cout << "[LODGE] Peer Detected! Initializing WebRTC handshake" << endl;
+            ui::log_internals("[LODGE] Peer detected! Initializing WebRTC handshake...");
             setup_sender();
         }
         else if (type == "offer" && !is_sender_) {
@@ -115,7 +119,7 @@ void WebRTCClient::handle_signaling_message(const string &message) {
             peer_connection_->setRemoteDescription(Description(sdp , "answer"));
         }
     } catch (exception &e) {
-        raft_globals::shutdown(string("[LODGE] Protocol Error: ") + e.what());
+        raft_globals::shutdown(Level::ERROR , string("[LODGE] Protocol Error: ") + e.what());
     }
 }
 
@@ -127,7 +131,7 @@ void WebRTCClient::setup_webrtc() {
 
     peer_connection_->onStateChange([](PeerConnection::State state) {
         if (state == PeerConnection::State::Failed || state == PeerConnection::State::Closed) {
-            raft_globals::shutdown("WebRTC PeerConnection Failed or Closed unexpectedly.");
+            raft_globals::shutdown(Level::ERROR , "WebRTC PeerConnection Failed or Closed unexpectedly.");
         }
     });
 
@@ -148,7 +152,7 @@ void WebRTCClient::setup_sender() {
     data_channel_ = peer_connection_->createDataChannel("dataraft pipeline");
 
     data_channel_->onOpen([this]() {
-        cout << "[WebRTC] P2P Pipe Opened! Severing LODGE connection..." << endl;
+        ui::log_internals("[WebRTC] P2P Pipe Opened! Severing LODGE connection...");
         json msg;
         msg["type"] = "leave";
         websocket_->send(msg.dump());
@@ -162,7 +166,7 @@ void WebRTCClient::setup_receiver() {
         data_channel_ = incoming_channel;
 
         data_channel_->onOpen([this]() {
-            cout << "[WebRTC] P2P channel Opened. Ready to receive..." << endl;
+            ui::log_internals("[WebRTC] P2P Pipe Opened! Ready to receive...");
             json msg;
             msg["type"] = "leave";
             websocket_->send(msg.dump());

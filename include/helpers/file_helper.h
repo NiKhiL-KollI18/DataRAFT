@@ -2,6 +2,7 @@
 
 #include <cstdint> // Required for uint8_t
 #include <functional>
+#include <queue>
 #include <string>
 #include <vector>
 
@@ -30,6 +31,8 @@ namespace file_helper {
         std::vector<uint8_t> derive_key(const std::string& password , const std::vector<uint8_t>& salt);
 
         std::vector<uint8_t> derive_block_iv(const std::vector<uint8_t> &master_iv , uint64_t block_index);
+
+        void build_transfer_queue(const std::string& target_path, std::queue<std::string>& pending_files, std::string& base_directory);
 
         class StreamingHasher {
         private:
