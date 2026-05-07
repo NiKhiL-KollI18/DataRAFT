@@ -108,3 +108,18 @@ jobs:
           name: DataRAFT-${{ runner.os }}-Build
           # Upload the entire 'builds' tree instead of just the raw files
           path: builds/
+            # ---------------------------------------------------------
+            # PUBLISH TO GITHUB RELEASES
+            # ---------------------------------------------------------
+            - name: Publish to GitHub Release
+              uses: softprops/action-gh-release@v2
+              # ONLY run this step if you just pushed a Git Tag (like v1.1.0)
+              if: startsWith(github.ref, 'refs/tags/')
+              with:
+                files: |
+                  builds/**/*.msi
+                  builds/**/*.deb
+                  builds/**/*.rpm
+                  builds/**/*.dmg
+              env:
+                GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
