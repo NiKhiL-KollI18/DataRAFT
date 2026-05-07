@@ -75,14 +75,29 @@ jobs:
           cpack -G "${{ matrix.generator }}"
 
       # ---------------------------------------------------------
-      # UPLOAD ARTIFACTS
+      # ORGANIZE & UPLOAD ARTIFACTS
       # ---------------------------------------------------------
-      - name: Upload Installer Artifacts
+      - name: Organize Build Folders
+        shell: bash
+        run: |
+          # 1. Determine the clean folder name based on the OS
+          if [ "${{ runner.os }}" == "Windows" ]; then TARGET_DIR="windows"; fi
+          if [ "${{ runner.os }}" == "Linux" ]; then TARGET_DIR="linux"; fi
+          if [ "${{ runner.os }}" == "macOS" ]; then TARGET_DIR="macos"; fi
+          
+          # 2. Create the target directory (e.g., builds/windows)
+          mkdir -p builds/$TARGET_DIR
+          
+          # 3. Move the generated installers into the new folder
+          # (The 2>/dev/null || true prevents errors if a specific file type doesn't exist)
+          mv build/*.msi builds/$TARGET_DIR/ 2>/dev/null || true
+          mv build/*.deb builds/$TARGET_DIR/ 2>/dev/null || true
+          mv build/*.rpm builds/$TARGET_DIR/ 2>/dev/null || true
+          mv build/*.dmg builds/$TARGET_DIR/ 2>/dev/null || true
+
+      - name: Upload Organized Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: DataRAFT-Installer-${{ runner.os }}
-          path: |
-            build/*.msi
-            build/*.deb
-            build/*.rpm
-            build/*.dmg
+          name: DataRAFT-${{ runner.os }}-Build
+          # Upload the entire 'builds' tree instead of just the raw files
+          path: builds/
