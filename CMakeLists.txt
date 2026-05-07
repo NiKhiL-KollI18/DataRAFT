@@ -19,13 +19,17 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib) # Static libs go her
 # 2. DEPENDENCIES
 # ==========================================
 if(WIN32)
-    # Windows: Give CMake the root path, let FindOpenSSL locate the lib/include folders dynamically
+    # Define the Root and Include paths
     set(OPENSSL_ROOT_DIR "C:/Program Files/OpenSSL-Win64")
+    set(OPENSSL_INCLUDE_DIR "${OPENSSL_ROOT_DIR}/include" CACHE PATH "" FORCE)
+
+    # Let CMake hunt for the .lib files in BOTH the Cloud path and your Local path
+    find_library(OPENSSL_CRYPTO_LIBRARY NAMES crypto libcrypto HINTS "${OPENSSL_ROOT_DIR}/lib" "${OPENSSL_ROOT_DIR}/lib/VC/x64/MD")
+    find_library(OPENSSL_SSL_LIBRARY NAMES ssl libssl HINTS "${OPENSSL_ROOT_DIR}/lib" "${OPENSSL_ROOT_DIR}/lib/VC/x64/MD")
 endif()
 
-# Find OpenSSL (Mac/Linux will use system paths, Windows will use the override above)
+# Find OpenSSL (Mac/Linux use system paths, Windows uses the dynamic search above)
 find_package(OpenSSL REQUIRED)
-
 include(FetchContent)
 set(NO_TESTS ON CACHE BOOL "" FORCE)
 set(NO_EXAMPLES ON CACHE BOOL "" FORCE)
