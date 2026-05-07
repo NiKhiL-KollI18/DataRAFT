@@ -36,8 +36,8 @@ jobs:
       - name: Install OpenSSL & WiX (Windows)
         if: runner.os == 'Windows'
         run: |
-          choco install openssl -y
-          # WiX v3 is pre-installed on GitHub Windows runners!
+          # Use Microsoft's native vcpkg instead of Chocolatey
+          vcpkg install openssl:x64-windows
 
       - name: Install OpenSSL (Ubuntu/Linux)
         if: runner.os == 'Linux'
@@ -54,7 +54,14 @@ jobs:
       # CMAKE CONFIGURATION & BUILD
       # ---------------------------------------------------------
       - name: Configure CMake
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            # Tell CMake to use the vcpkg toolchain to find OpenSSL
+            cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          else
+            cmake -B build -DCMAKE_BUILD_TYPE=Release
+          fi
 
       - name: Build DataRAFT
         run: cmake --build build --config Release -j 4
