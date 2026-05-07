@@ -4,6 +4,7 @@
 #include <vector>
 #include <optional>
 #include <memory>
+#include <cstring>
 
 #include "file_helper.h"
 #include "protocol.h"

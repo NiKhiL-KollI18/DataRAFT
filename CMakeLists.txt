@@ -19,14 +19,11 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib) # Static libs go her
 # 2. DEPENDENCIES
 # ==========================================
 if(WIN32)
-    # Windows: Use explicit paths for the GitHub Runner (Chocolatey install)
+    # Windows: Give CMake the root path, let FindOpenSSL locate the lib/include folders dynamically
     set(OPENSSL_ROOT_DIR "C:/Program Files/OpenSSL-Win64")
-    set(OPENSSL_INCLUDE_DIR "${OPENSSL_ROOT_DIR}/include" CACHE PATH "" FORCE)
-    set(OPENSSL_CRYPTO_LIBRARY "${OPENSSL_ROOT_DIR}/lib/VC/x64/MD/libcrypto.lib" CACHE FILEPATH "" FORCE)
-    set(OPENSSL_SSL_LIBRARY "${OPENSSL_ROOT_DIR}/lib/VC/x64/MD/libssl.lib" CACHE FILEPATH "" FORCE)
 endif()
 
-# Find OpenSSL (Mac/Linux will use system paths, Windows will use the overrides above)
+# Find OpenSSL (Mac/Linux will use system paths, Windows will use the override above)
 find_package(OpenSSL REQUIRED)
 
 include(FetchContent)
@@ -121,16 +118,21 @@ target_include_directories(dataraft_core PUBLIC
         ${CMAKE_SOURCE_DIR}/include/helpers
 )
 
+# Cross-platform linking
 target_link_libraries(dataraft_core
         PUBLIC
         datachannel
         nlohmann_json::nlohmann_json
         PRIVATE
-        ws2_32
         OpenSSL::SSL
         OpenSSL::Crypto
         libzstd_static
 )
+
+# Windows-only linking
+if(WIN32)
+    target_link_libraries(dataraft_core PRIVATE ws2_32 iphlpapi)
+endif()
 
 # ==========================================
 # 4. BUILD THE CLI EXECUTABLE
@@ -190,7 +192,7 @@ if(WIN32)
     set(CPACK_WIX_PATCH_FILE "${CMAKE_SOURCE_DIR}/wix_patch.xml")
 
     # 4. Custom images for the top banner and background
-     set(CPACK_WIX_UI_DIALOG "${CMAKE_SOURCE_DIR}/assets/DatRAFTBanner.bmp")
+    set(CPACK_WIX_UI_DIALOG "${CMAKE_SOURCE_DIR}/assets/DatRAFTBanner.bmp")
 endif()
 
 # Global CPack Metadata
