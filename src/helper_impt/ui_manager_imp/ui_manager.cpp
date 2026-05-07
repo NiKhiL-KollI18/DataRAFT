@@ -204,7 +204,7 @@ void UIManager::draw_progress_bar(uint64_t current_bytes, uint64_t total_bytes,
     //--draw the UI--
 
     //Block 1: The Progress Bar [=======>     ] 45%
-    cout << "[" << RESET;
+    oss << "[" << RESET;
     for (int i = 0 ; i < bar_width ; i++) {
         if (i < pos) {
             oss << "=" << RESET;

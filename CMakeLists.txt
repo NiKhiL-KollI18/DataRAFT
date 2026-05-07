@@ -19,8 +19,8 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib) # Static libs go her
 # 2. DEPENDENCIES
 # ==========================================
 set(OPENSSL_ROOT_DIR "C:/Program Files/OpenSSL-Win64")
-set(OPENSSL_CRYPTO_LIBRARY "C:/Program Files/OpenSSL-Win64/lib/VC/x64/MD/libcrypto.lib" CACHE FILEPATH "" FORCE)
-set(OPENSSL_SSL_LIBRARY "C:/Program Files/OpenSSL-Win64/lib/VC/x64/MD/libssl.lib" CACHE FILEPATH "" FORCE)
+set(OPENSSL_CRYPTO_LIBRARY "${OPENSSL_ROOT_DIR}/lib/VC/x64/MD/libcrypto.lib" CACHE FILEPATH "" FORCE)
+set(OPENSSL_SSL_LIBRARY "${OPENSSL_ROOT_DIR}/lib/VC/x64/MD/libssl.lib" CACHE FILEPATH "" FORCE)
 
 find_package(OpenSSL REQUIRED)
 
@@ -74,7 +74,6 @@ FetchContent_MakeAvailable(cli11)
 # 3. BUILD DATARAFT CORE ENGINE (DLL)
 # ==========================================
 add_library(dataraft_core SHARED
-
         #Globals
         src/helper_impt/ui_manager_imp/ui_manager.cpp
         src/helper_impt/config_manager_impl/config_manager.cpp
@@ -107,37 +106,93 @@ add_library(dataraft_core SHARED
         src/impl/receiver/process_manifest.cpp
         src/impl/receiver/process_metadata.cpp
         src/impl/receiver/start_receiving.cpp
-
 )
 
 target_compile_definitions(dataraft_core PRIVATE DATARAFT_CORE_EXPORTS)
 
-# Using PUBLIC means anything that links to dataraft_core also gets these includes
 target_include_directories(dataraft_core PUBLIC
         ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_SOURCE_DIR}/include/helpers
 )
 
-# Link the heavy networking and crypto libraries ONLY to the core engine
 target_link_libraries(dataraft_core
         PUBLIC
-            datachannel
+        datachannel
         nlohmann_json::nlohmann_json
         PRIVATE
-            ws2_32
-            OpenSSL::SSL
-            OpenSSL::Crypto
-            libzstd_static
+        ws2_32
+        OpenSSL::SSL
+        OpenSSL::Crypto
+        libzstd_static
 )
 
 # ==========================================
 # 4. BUILD THE CLI EXECUTABLE
 # ==========================================
-add_executable(${PROJECT_NAME} main.cpp)
+add_executable(raft main.cpp)
 
-# Link the executable to our custom engine DLL and the CLI parser
-target_link_libraries(${PROJECT_NAME} PRIVATE
+target_link_libraries(raft PRIVATE
         dataraft_core
         CLI11::CLI11
 )
+
+# --- COPY OPENSSL DLLs TO BIN FOLDER FOR LOCAL TESTING ---
+if(WIN32)
+    add_custom_command(TARGET raft POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/needed_libraries/libcrypto-3-x64.dll"
+            $<TARGET_FILE_DIR:raft>
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/needed_libraries/libssl-3-x64.dll"
+            $<TARGET_FILE_DIR:raft>
+    )
+endif()
+
+# ==========================================
+# 5. PACKAGING & INSTALL RULES (CPack)
+# ==========================================
+
+# Tell CMake what files to include in the final installer
+install(TARGETS raft dataraft_core
+        RUNTIME DESTINATION bin
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib
+)
+
+if(WIN32)
+    # Package the OpenSSL DLLs into the Windows installer's bin folder
+    install(FILES
+            "${CMAKE_SOURCE_DIR}/needed_libraries/libcrypto-3-x64.dll"
+            "${CMAKE_SOURCE_DIR}/needed_libraries/libssl-3-x64.dll"
+            DESTINATION bin
+    )
+endif()
+
+# Configure WiX Specifics
+if(WIN32)
+    set(CPACK_GENERATOR "WIX")
+
+    # 1. THE LOOK: Use a minimalist UI (No folder choosing, just 'Install')
+    set(CPACK_WIX_UI_REF "WixUI_Minimal")
+
+    # 2. THE ICON: Path to your .ico file (Create a 256x256 icon later)
+    set(CPACK_WIX_PRODUCT_ICON "${CMAKE_SOURCE_DIR}/assets/raft_logo.ico")
+
+    # 3. PATH INJECTION:
+    # This is handled via a 'Patch' in WiX for deep control.
+    # We will tell CPack to always include the bin folder in PATH.
+    set(CPACK_WIX_PATCH_FILE "${CMAKE_SOURCE_DIR}/wix_patch.xml")
+
+    # 4. Custom images for the top banner and background
+     set(CPACK_WIX_UI_DIALOG "${CMAKE_SOURCE_DIR}/assets/DatRAFTBanner.bmp")
+endif()
+
+# Global CPack Metadata
+set(CPACK_PACKAGE_NAME "DataRAFT")
+set(CPACK_PACKAGE_VENDOR "Nikhil")
+set(CPACK_PACKAGE_VERSION "1.0.0")
+set(CPACK_WIX_UPGRADE_GUID "C472A672-DD4D-426D-BD09-C0B8AB14AF6A")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "DataRAFT")
+
+include(CPack)
