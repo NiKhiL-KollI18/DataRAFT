@@ -1,0 +1,88 @@
+name: Build DataRAFT Installers
+
+# This triggers the workflow whenever you push to the 'main' branch,
+# or you can click a button to run it manually from the GitHub UI.
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    # This creates three separate servers simultaneously
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            generator: "WIX"
+            ext: "msi"
+          - os: ubuntu-latest
+            generator: "DEB;RPM"
+            ext: "deb" # We will capture both deb and rpm
+          - os: macos-latest
+            generator: "DragNDrop"
+            ext: "dmg"
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      # ---------------------------------------------------------
+      # DEPENDENCY INSTALLATION
+      # ---------------------------------------------------------
+      - name: Install OpenSSL & WiX (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install openssl -y
+          # WiX v3 is pre-installed on GitHub Windows runners!
+
+      - name: Install OpenSSL (Ubuntu/Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev rpm
+
+      - name: Install OpenSSL (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install openssl@3
+
+      # ---------------------------------------------------------
+      # CMAKE CONFIGURATION & BUILD
+      # ---------------------------------------------------------
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build DataRAFT
+        run: cmake --build build --config Release -j 4
+
+      # ---------------------------------------------------------
+      # CPACK: GENERATE INSTALLERS
+      # ---------------------------------------------------------
+      - name: Run CPack (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd build
+          cpack -C Release -G ${{ matrix.generator }}
+
+      - name: Run CPack (Linux & macOS)
+        if: runner.os != 'Windows'
+        run: |
+          cd build
+          cpack -G "${{ matrix.generator }}"
+
+      # ---------------------------------------------------------
+      # UPLOAD ARTIFACTS
+      # ---------------------------------------------------------
+      - name: Upload Installer Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: DataRAFT-Installer-${{ runner.os }}
+          path: |
+            build/*.msi
+            build/*.deb
+            build/*.rpm
+            build/*.dmg
