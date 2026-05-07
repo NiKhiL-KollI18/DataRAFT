@@ -149,7 +149,8 @@ target_link_libraries(raft PRIVATE
 )
 
 # --- COPY OPENSSL DLLs TO BIN FOLDER FOR LOCAL TESTING ---
-if(WIN32)
+if(WIN32 AND NOT DEFINED ENV{CI})
+    # LOCAL ONLY: Copy your manual DLLs
     add_custom_command(TARGET raft POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_SOURCE_DIR}/needed_libraries/libcrypto-3-x64.dll"
@@ -172,12 +173,20 @@ install(TARGETS raft dataraft_core
 )
 
 if(WIN32)
-    # Package the OpenSSL DLLs into the Windows installer's bin folder
-    install(FILES
-            "${CMAKE_SOURCE_DIR}/needed_libraries/libcrypto-3-x64.dll"
-            "${CMAKE_SOURCE_DIR}/needed_libraries/libssl-3-x64.dll"
-            DESTINATION bin
-    )
+    if(NOT DEFINED ENV{CI})
+        # LOCAL ONLY: Package your manual DLLs
+        install(FILES
+                "${CMAKE_SOURCE_DIR}/needed_libraries/libcrypto-3-x64.dll"
+                "${CMAKE_SOURCE_DIR}/needed_libraries/libssl-3-x64.dll"
+                DESTINATION bin
+        )
+    else()
+        # CLOUD CI ONLY: Package the DLLs that vcpkg automatically generated
+        install(DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Release/"
+                DESTINATION bin
+                FILES_MATCHING PATTERN "*.dll"
+        )
+    endif()
 endif()
 
 # Configure WiX Specifics
