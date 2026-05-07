@@ -18,18 +18,27 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib) # Static libs go her
 # ==========================================
 # 2. DEPENDENCIES
 # ==========================================
+# ==========================================
+# 2. DEPENDENCIES
+# ==========================================
 if(WIN32)
-    # Define the Root and Include paths
     set(OPENSSL_ROOT_DIR "C:/Program Files/OpenSSL-Win64")
     set(OPENSSL_INCLUDE_DIR "${OPENSSL_ROOT_DIR}/include" CACHE PATH "" FORCE)
 
-    # Let CMake hunt for the .lib files in BOTH the Cloud path and your Local path
-    find_library(OPENSSL_CRYPTO_LIBRARY NAMES crypto libcrypto HINTS "${OPENSSL_ROOT_DIR}/lib" "${OPENSSL_ROOT_DIR}/lib/VC/x64/MD")
-    find_library(OPENSSL_SSL_LIBRARY NAMES ssl libssl HINTS "${OPENSSL_ROOT_DIR}/lib" "${OPENSSL_ROOT_DIR}/lib/VC/x64/MD")
+    # Aggressively hunt for OpenSSL 3.x Windows naming variants in all possible Choco/Local paths
+    find_library(OPENSSL_CRYPTO_LIBRARY
+            NAMES crypto libcrypto libcrypto-3-x64
+            HINTS "${OPENSSL_ROOT_DIR}/lib" "${OPENSSL_ROOT_DIR}/lib/VC/x64/MD" "C:/Program Files/OpenSSL/lib"
+    )
+    find_library(OPENSSL_SSL_LIBRARY
+            NAMES ssl libssl libssl-3-x64
+            HINTS "${OPENSSL_ROOT_DIR}/lib" "${OPENSSL_ROOT_DIR}/lib/VC/x64/MD" "C:/Program Files/OpenSSL/lib"
+    )
 endif()
 
 # Find OpenSSL (Mac/Linux use system paths, Windows uses the dynamic search above)
 find_package(OpenSSL REQUIRED)
+
 include(FetchContent)
 set(NO_TESTS ON CACHE BOOL "" FORCE)
 set(NO_EXAMPLES ON CACHE BOOL "" FORCE)
