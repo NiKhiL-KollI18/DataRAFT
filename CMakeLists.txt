@@ -19,13 +19,14 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib) # Static libs go her
 # 2. DEPENDENCIES
 # ==========================================
 if(WIN32)
-    # Windows: Use your local paths
+    # Windows: Use explicit paths for the GitHub Runner (Chocolatey install)
     set(OPENSSL_ROOT_DIR "C:/Program Files/OpenSSL-Win64")
+    set(OPENSSL_INCLUDE_DIR "${OPENSSL_ROOT_DIR}/include" CACHE PATH "" FORCE)
     set(OPENSSL_CRYPTO_LIBRARY "${OPENSSL_ROOT_DIR}/lib/VC/x64/MD/libcrypto.lib" CACHE FILEPATH "" FORCE)
     set(OPENSSL_SSL_LIBRARY "${OPENSSL_ROOT_DIR}/lib/VC/x64/MD/libssl.lib" CACHE FILEPATH "" FORCE)
 endif()
 
-# Mac and Linux will find it automatically via system paths
+# Find OpenSSL (Mac/Linux will use system paths, Windows will use the overrides above)
 find_package(OpenSSL REQUIRED)
 
 include(FetchContent)
