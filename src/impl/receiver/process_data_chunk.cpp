@@ -42,15 +42,16 @@ void FileReceiver::process_data_chunks(vector<char> &&chunk) {
 
             bytes_received_since_last_calc_ = 0;
             last_speed_calc_time_ = now;
+
+            // ONLY draw to the screen twice a second!
+            uint64_t display_file_num = current_file_count_;
+
+            ui::draw_progress_bar(global_bytes_transferred_ , manifest_.total_folder_size_ ,
+                display_file_num , manifest_.total_file_count_ ,
+                final_filepath_ , current_speed_bps_);
         }
 
-        uint64_t display_file_num = current_file_count_;
-
-        ui::draw_progress_bar(global_bytes_transferred_ , manifest_.total_folder_size_ ,
-            display_file_num , manifest_.total_file_count_ ,
-            final_filepath_ , current_speed_bps_);
-
     } catch (const std::exception& e) {
-        raft_globals::shutdown(Level::ERROR , std::string("Pipeline Error during data processing: ") + e.what());
+        raft_globals::shutdown(Level::ERR , std::string("Pipeline Error during data processing: ") + e.what());
     }
 }

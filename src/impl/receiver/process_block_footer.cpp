@@ -14,7 +14,7 @@ using ui = UIManager;
 
 void FileReceiver::process_block_footer(vector<char> &&footer_data) {
     if (footer_data.size() != sizeof(BlockFooter)) {
-        raft_globals::shutdown(Level::ERROR , "Received corrupted block footer (Network Desync).");
+        raft_globals::shutdown(Level::ERR , "Received corrupted block footer (Network Desync).");
         return;
     }
 
@@ -55,22 +55,22 @@ void FileReceiver::process_block_footer(vector<char> &&footer_data) {
         try {
             fs::resize_file(current_filepath_ , safe_byte_size);
         } catch (exception& e) {
-            raft_globals::shutdown(Level::ERROR , std::string("Cannot truncate corrupted file: ") + e.what());
+            raft_globals::shutdown(Level::ERR , std::string("Cannot truncate corrupted file: ") + e.what());
             return;
         }
 
         send_ack(false , current_block_index_);
-        raft_globals::shutdown(Level::ERROR , "Transfer aborted due to block corruption. Restart transfer to resume safely.");
+        raft_globals::shutdown(Level::ERR , "Transfer aborted due to block corruption. Restart transfer to resume safely.");
         return;
     }
 
     //--Successful block transfer--
     current_block_index_++;
 
-    hasher_.emplace();
+    hasher_->reset();
 
     if (metadata_.is_compressed_) {
-        decompressor_.emplace();
+        decompressor_->reset();
     }
 
     if (manifest_.is_encrypted_) {

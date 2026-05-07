@@ -139,7 +139,7 @@ void UIManager::print(Level level, const string &message) {
                 oss << GREEN << message << RESET; break;
             case Level::WARNING:
                 oss << YELLOW << message << RESET; break;
-            case Level::ERROR:
+            case Level::ERR:
                 oss << RED << message << RESET; break;
             case Level::SYSTEM:
                 oss << message << RESET; break;

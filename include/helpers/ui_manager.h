@@ -8,7 +8,7 @@ enum class Level {
     INFO,
     SUCCESS,
     WARNING,
-    ERROR,
+    ERR,
     SYSTEM,
     DEBUG
 };

@@ -69,6 +69,8 @@ private:
     void producer();
     void flush_network_queue();
 
+    bool load_next_batch_file();
+
 public:
     Sender(const std::queue<std::string> &files, std::string base_dir,
            const std::shared_ptr<rtc::DataChannel> &data_channel,

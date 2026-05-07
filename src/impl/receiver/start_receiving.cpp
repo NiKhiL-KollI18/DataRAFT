@@ -13,13 +13,13 @@ using ui = UIManager;
 void FileReceiver::start_receiving() {
     ui::log_internals("[Receiver] listening for incoming transfers...");
 
-    data_channel_->onMessage([this](variant<binary , string> data) {
+    data_channel_->onMessage([this](const variant<binary , string> &data) {
         if (!raft_globals::is_running) return;
 
         try {
             if (holds_alternative<binary>(data)) {
 
-                auto raw_data = get<binary>(data);
+                const auto& raw_data = get<binary>(data);
 
                 if (raw_data.empty()) return;
 
@@ -37,19 +37,24 @@ void FileReceiver::start_receiving() {
 
                     case ReceiverState::RECEIVING_DATA:
                     {
-                        vector<char> chunk(reinterpret_cast<const char*>(raw_data.data()) ,
-                            reinterpret_cast<const char*>(raw_data.data()) + raw_data.size());
+                        //Extracting the router flag
+                        auto footer_flag = static_cast<PacketType>(raw_data.back());
+                        auto payload_size = raw_data.size() - 1;
 
-                        //Extracting router flag
-                        auto footer_flag = static_cast<PacketType>(chunk.back());
-                        chunk.pop_back();
+
 
                         if (footer_flag == PacketType::RAW_DATA) {
+                            vector<char> chunk(payload_size);
+                            memcpy(chunk.data() , raw_data.data() , payload_size);
+
                             //standard data packets
                             process_data_chunks(std::move(chunk));
                         }
                         else if (footer_flag == PacketType::BLOCK_FOOTER) {
                             //Hit the 8MB Block boundary! Verify this block's integrity
+                            vector<char> chunk(payload_size);
+                            memcpy(chunk.data() , raw_data.data() , payload_size);
+
                             process_block_footer(std::move(chunk));
                         }
                         else if (footer_flag == PacketType::FILE_EOF) {
@@ -62,7 +67,7 @@ void FileReceiver::start_receiving() {
                 }
             }
         } catch (const std::exception& e) {
-            raft_globals::shutdown(Level::ERROR , std::string("Receiver pipeline crashed: ") + e.what());
+            raft_globals::shutdown(Level::ERR , std::string("Receiver pipeline crashed: ") + e.what());
         }
     });
 }

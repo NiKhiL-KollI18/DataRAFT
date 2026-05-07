@@ -93,7 +93,7 @@ void WebRTCClient::setup_signaling() {
     websocket_->onClosed([]{});
 
     websocket_->onError([](const string &e) {
-        raft_globals::shutdown(Level::ERROR , "WebSocket Error: " + e);
+        raft_globals::shutdown(Level::ERR , "WebSocket Error: " + e);
     });
 
     websocket_->open(signaling_url_);
@@ -109,7 +109,7 @@ void WebRTCClient::handle_signaling_message(const string &message) {
             room_promise_.set_value(room_id_);
         }
         else if (type == "error") {
-            raft_globals::shutdown(Level::ERROR , "Server error: " + payload["data"].get<string>());
+            raft_globals::shutdown(Level::ERR , "Server error: " + payload["data"].get<string>());
         }
         else if (type == "peer_joined" && is_sender_) {
             ui::log_internals("[LODGE] Peer detected! Initializing WebRTC handshake...");
@@ -126,7 +126,7 @@ void WebRTCClient::handle_signaling_message(const string &message) {
             peer_connection_->setRemoteDescription(Description(sdp , "answer"));
         }
     } catch (exception &e) {
-        raft_globals::shutdown(Level::ERROR , string("[LODGE] Protocol Error: ") + e.what());
+        raft_globals::shutdown(Level::ERR , string("[LODGE] Protocol Error: ") + e.what());
     }
 }
 
@@ -138,7 +138,7 @@ void WebRTCClient::setup_webrtc() {
 
     peer_connection_->onStateChange([](PeerConnection::State state) {
         if (state == PeerConnection::State::Failed || state == PeerConnection::State::Closed) {
-            raft_globals::shutdown(Level::ERROR , "WebRTC PeerConnection Failed or Closed unexpectedly.");
+            raft_globals::shutdown(Level::ERR , "WebRTC PeerConnection Failed or Closed unexpectedly.");
         }
     });
 

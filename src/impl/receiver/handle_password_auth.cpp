@@ -48,7 +48,7 @@ void FileReceiver::handle_password_auth() {
                 is_valid = false;
             }
         } catch (const std::exception& e) {
-            raft_globals::shutdown(Level::ERROR , string("[Receiver] Cryptographic Error: ")+ e.what());
+            raft_globals::shutdown(Level::ERR , string("[Receiver] Cryptographic Error: ")+ e.what());
         }
     }
 

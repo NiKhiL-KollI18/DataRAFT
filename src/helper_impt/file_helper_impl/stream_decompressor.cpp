@@ -56,4 +56,14 @@ namespace file_helper {
 
         chunk = std::move(decompressed_result);
     }
+
+    void StreamDecompressor::reset() {
+        auto* dctx = static_cast<ZSTD_DCtx*>(ctx);
+
+        // Recycle the memory!
+        size_t ret = ZSTD_DCtx_reset(dctx, ZSTD_reset_session_only);
+        if (ZSTD_isError(ret)) {
+            throw runtime_error(string("Error : Failed to reset ZSTD context: ") + ZSTD_getErrorName(ret));
+        }
+    }
 }

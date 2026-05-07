@@ -23,14 +23,11 @@ void FileReceiver::process_file_eof() {
         ui::log_internals("[Receiver] File transfer complete : " + string(metadata_.relative_path_));
 
     } catch (exception& e) {
-        raft_globals::shutdown(Level::ERROR , std::string("Failed to finalize .raftpath rename: ") + e.what());
+        raft_globals::shutdown(Level::ERR , std::string("Failed to finalize .raftpath rename: ") + e.what());
         return;
     }
 
     send_ack(true , 0);
-
-    hasher_.reset();
-    decompressor_.reset();
 
     //---Batch Loop---
     if (manifest_.is_batch_directory_ && current_file_count_ < manifest_.total_file_count_) {

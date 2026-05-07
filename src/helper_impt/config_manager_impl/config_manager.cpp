@@ -5,6 +5,13 @@
 #include <filesystem>
 #include <algorithm>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+#include "globals.h"
+#include "ui_manager.h"
+
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
@@ -22,20 +29,29 @@ std::string ConfigManager::get_os_username() {
     return user ? std::string(user) : "RaftUser";
 }
 
-std::string ConfigManager::resolve_config_path() {
+std::string ConfigManager::get_os_raft_dir() {
 #ifdef _WIN32
-    std::string base = std::getenv("USERPROFILE") ? std::getenv("USERPROFILE") : ".";
+    const char* home = std::getenv("USERPROFILE");
 #else
-    std::string base = std::getenv("HOME") ? std::getenv("HOME") : "."; // Fixed pointer typo
+    const char* home = std::getenv("HOME");
 #endif
+    fs::path base = home ? fs::path(home) : fs::current_path();
+    fs::path raft_dir = base / ".dataraft";
 
-    std::string raft_dir = base + "/.dataraft";
-    if (!std::filesystem::exists(raft_dir)) {
-        std::filesystem::create_directories(raft_dir);
+    if (!fs::exists(raft_dir)) {
+        fs::create_directories(raft_dir);
+
+#ifdef _WIN32
+        // Truly hide the folder on Windows filesystem
+        SetFileAttributesA(raft_dir.string().c_str(), FILE_ATTRIBUTE_HIDDEN);
+#endif
     }
+    return raft_dir.string();
+}
 
-    // Fixed: Save the config INSIDE the hidden folder
-    return raft_dir + "/config.json";
+std::string ConfigManager::resolve_config_path() {
+    fs::path raft_dir = get_os_raft_dir();
+    return (raft_dir / "config.json").string();
 }
 
 std::string ConfigManager::get_os_downloads_folder() {
@@ -44,8 +60,24 @@ std::string ConfigManager::get_os_downloads_folder() {
 #else
     const char* home = std::getenv("HOME");
 #endif
-    std::string base = home ? std::string(home) : ".";
-    return base + "/Downloads";
+    fs::path base = home ? fs::path(home) : fs::current_path();
+    return (base / "Downloads").string();
+}
+
+std::string ConfigManager::get_log_filepath() {
+#ifdef _WIN32
+    const char* home = std::getenv("USERPROFILE");
+#else
+    const char* home = std::getenv("HOME");
+#endif
+    fs::path base = home ? fs::path(home) : fs::current_path();
+
+    // Logs are kept in a visible folder for easy user access
+    fs::path log_dir = base / "DataRAFT_Logs";
+    if (!fs::exists(log_dir)) {
+        fs::create_directories(log_dir);
+    }
+    return (log_dir / "raft.log").string();
 }
 
 // --- CORE ENGINE ---
@@ -70,7 +102,6 @@ void ConfigManager::init() {
         try {
             file >> curr_config_;
 
-            // Safety check: if the user manually deleted a key from the JSON, restore it
             bool missing_keys = false;
             json defaults;
             defaults["username"] = get_os_username();
@@ -80,16 +111,18 @@ void ConfigManager::init() {
             defaults["skip_existing"] = true;
             defaults["default_download_path"] = get_os_downloads_folder();
 
-            for (auto& el : defaults.items()) {
-                if (!curr_config_.contains(el.key())) {
-                    curr_config_[el.key()] = el.value();
+            // C++17 Structured binding for clean, zero-copy iteration
+            for (const auto& [key, value] : defaults.items()) {
+                if (!curr_config_.contains(key)) {
+                    curr_config_[key] = value;
                     missing_keys = true;
                 }
             }
             if (missing_keys) save();
 
         } catch (...) {
-            std::cerr << "[Config] Warning: Corrupted config file detected. Restoring defaults." << std::endl;
+            UIManager::print(Level::ERR, " Warning: Corrupted config file detected. Restoring defaults");
+            UIManager::new_line();
             generate_default_config();
             save();
         }
@@ -98,7 +131,7 @@ void ConfigManager::init() {
 
 void ConfigManager::save() {
     std::ofstream file(config_path_);
-    file << curr_config_.dump(4); // Pretty print with 4 spaces for human readability
+    file << curr_config_.dump(4);
 }
 
 // --- CLI HANDLERS ---
@@ -109,7 +142,6 @@ std::string ConfigManager::get_all() {
 
 std::string ConfigManager::get(const std::string& key) {
     if (curr_config_.contains(key)) {
-        // Return without quotes for strings so it looks clean in the terminal
         return curr_config_[key].is_string() ? curr_config_[key].get<std::string>() : curr_config_[key].dump();
     }
     return "Error: Key not found.";
@@ -128,14 +160,15 @@ void ConfigManager::set(const std::string& key, const std::string& value, bool i
         if (defaults.contains(key)) {
             curr_config_[key] = defaults[key];
             save();
-            std::cout << "[Config] Restored " << key << " to default." << std::endl;
+            UIManager::print(Level::SYSTEM, "Restored " + key + " to default: " + defaults[key].dump());
+            UIManager::new_line();
         } else {
-            std::cout << "[Config] Error: Unknown key." << std::endl;
+            UIManager::print(Level::ERR , "Error: Unknown key.");
+            UIManager::new_line();
         }
         return;
     }
 
-    // Type casting logic for booleans
     if (value == "true" || value == "1") {
         curr_config_[key] = true;
     } else if (value == "false" || value == "0") {
@@ -145,13 +178,15 @@ void ConfigManager::set(const std::string& key, const std::string& value, bool i
     }
 
     save();
-    std::cout << "[Config] Updated " << key << " successfully." << std::endl;
+    UIManager::print(Level::SYSTEM, "Updated " + key + " successfully.");
+    UIManager::new_line();
 }
 
 void ConfigManager::reset_all() {
     generate_default_config();
     save();
-    std::cout << "[Config] All settings restored to factory defaults." << std::endl;
+    UIManager::print(Level::SYSTEM, "All settings restored to factory defaults.");
+    UIManager::new_line();
 }
 
 // --- FAST ENGINE GETTERS ---
@@ -161,17 +196,13 @@ std::string ConfigManager::get_stun_server() { return curr_config_["stun_server"
 std::string ConfigManager::get_signaling_server() { return curr_config_["signaling_url"]; }
 bool ConfigManager::get_skip_existing() { return curr_config_["skip_existing"]; }
 
-// This reads whatever the user has set in the JSON (or the OS default if they haven't changed it)
 std::string ConfigManager::get_default_download_dir() {
     return curr_config_["default_download_path"].get<std::string>();
 }
 
 uint64_t ConfigManager::get_buffer_limit() {
     std::string val = curr_config_["buffer_limit"];
-
-    // Remove spaces (e.g., "32 MB" -> "32MB")
     val.erase(std::remove_if(val.begin(), val.end(), ::isspace), val.end());
-    // Convert to uppercase
     std::transform(val.begin(), val.end(), val.begin(), ::toupper);
 
     uint64_t multiplier = 1;
@@ -183,19 +214,6 @@ uint64_t ConfigManager::get_buffer_limit() {
         uint64_t base = std::stoull(val);
         return base * multiplier;
     } catch (...) {
-        return 16 * 1024 * 1024; // Safe fallback to 16MB
+        return 16 * 1024 * 1024;
     }
-}
-
-std::string ConfigManager::get_log_filepath() {
-#ifdef _WIN32
-    std::string base = std::getenv("USERPROFILE")?std::getenv("USERPROFILE") : ".";
-#else
-    std::string base = std::getenv("HOME")?std::getenv("HOME") : ".";
-#endif
-    std::string log_dir = base + "/dataraft";
-    if (!std::filesystem::exists(log_dir)) {
-        std::filesystem::create_directories(log_dir);
-    }
-    return log_dir + "/raft.log";
 }

@@ -173,7 +173,7 @@ int main(int argc , char** argv) {
             }
         }
     } catch (exception& e) {
-        raft_globals::shutdown(Level::ERROR , string("Fatal Setup Error! ") + e.what());
+        raft_globals::shutdown(Level::ERR , string("Fatal Setup Error! ") + e.what());
         return 1;
     }
     return 0;

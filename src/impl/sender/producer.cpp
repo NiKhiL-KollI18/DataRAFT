@@ -22,12 +22,17 @@ void Sender::producer() {
 
         uint64_t current_block_index = resume_from_block_;
 
+        // --- PRE-ALLOCATE TRANSFORMERS ONCE ---
+        if (!hasher_) hasher_.emplace();
+        if (metadata_.is_compressed_ && !compressor_) compressor_.emplace();
+
         // OUTER LOOP : 8MB BLOCKS
         while (infile_ && current_state_ == SenderState::TRANSFERRING && raft_globals::is_running) {
-            hasher_.emplace();
+
+            hasher_->reset();
 
             if (metadata_.is_compressed_) {
-                compressor_.emplace();
+                compressor_->reset();
             }
 
             if (data_manifest_.is_encrypted_) {
@@ -42,7 +47,8 @@ void Sender::producer() {
             while (bytes_read_for_block < BLOCK_SIZE && infile_ && current_state_ == SenderState::TRANSFERRING && raft_globals::is_running) {
 
                 size_t bytes_to_read = min(static_cast<size_t>(BUCKET_SIZE) ,
-                    static_cast<size_t>(BLOCK_SIZE - bytes_read_for_block));
+                    BLOCK_SIZE - bytes_read_for_block);
+
                 vector<char> buffer(bytes_to_read);
 
                 infile_.read(buffer.data() , static_cast<streamsize>(bytes_to_read));
@@ -53,7 +59,7 @@ void Sender::producer() {
                 buffer.resize(bytes_read);
                 bytes_read_for_block += bytes_read;
 
-                bool is_last_chunk_in_block = (bytes_read_for_block == BLOCK_SIZE || infile_.peek() == EOF || infile_.eof());
+                bool is_last_chunk_in_block = (bytes_read_for_block == BLOCK_SIZE || infile_.eof());
 
                 hasher_->update_hash(buffer);
 
@@ -65,7 +71,7 @@ void Sender::producer() {
                     encryptor_->encrypt_chunk(buffer);
                 }
 
-                // Add PacketType::RAW_DATA flag for routing
+                buffer.reserve(buffer.size() + 1);
                 buffer.push_back(static_cast<char>(PacketType::RAW_DATA));
 
                 {
@@ -74,19 +80,17 @@ void Sender::producer() {
                         return current_queue_size_ < MAX_QUEUE_SIZE || !raft_globals::is_running;
                     });
 
-                    if (!raft_globals::is_running) break; // Escape immediately if app is killed
+                    if (!raft_globals::is_running) break;
 
                     current_queue_size_ += buffer.size();
                     chunk_queue_.push(std::move(buffer));
                 }
-
-                // WebRTC Stutter prevention Flush
                 flush_network_queue();
-            }
+            } // END OF INNER LOOP
 
             if (!raft_globals::is_running) break;
 
-            // --Block finalization--
+            // --- BLOCK FINALIZATION ---
             if (bytes_read_for_block > 0) {
                 BlockFooter footer{};
                 memset(&footer , 0 , sizeof(BlockFooter));
@@ -117,13 +121,13 @@ void Sender::producer() {
                     chunk_queue_.push(std::move(footer_buffer));
                 }
 
-                // Flush Network queue again
                 flush_network_queue();
 
-                current_block_index++; // Incremental math for the next 8MB loop
+                current_block_index++;
             }
-        } // EOF of entire file (or aborted)
+        } // END OF OUTER LOOP
 
+        // FILE EOF LOGIC
         if (raft_globals::is_running) {
             ui::log_internals("[Sender] Disk read completed. Sending EOF signal...");
 
@@ -134,15 +138,14 @@ void Sender::producer() {
                 chunk_queue_.push(std::move(eof_buffer));
             }
 
-            // Final Network Flush
             flush_network_queue();
 
             is_file_reading_completed_ = true;
             ui::log_internals("[Sender] File read completed. Awaiting ACK from receiver...");
         }
 
-    } catch (exception &e) {
-        raft_globals::shutdown(Level::ERROR , string("Producer thread crashed: ") + e.what());
+    }catch (exception &e) {
+        raft_globals::shutdown(Level::ERR , string("Producer thread crashed: ") + e.what());
     }
 }
 

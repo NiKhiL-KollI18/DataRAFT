@@ -9,6 +9,9 @@ private:
     static std::string config_path_;
 
     static std::string get_os_username();
+
+    static std::string get_os_raft_dir();
+
     static std::string resolve_config_path();
 
     static std::string get_os_downloads_folder();

@@ -60,4 +60,16 @@ namespace file_helper {
         }
         chunk = std::move(compressed_result);
     }
+
+    void StreamCompressor::reset() {
+        auto* cctx = static_cast<ZSTD_CCtx*>(ctx);
+
+        // ZSTD_reset_session_only clears the dictionary and history for a new stream,
+        // but crucially KEEPS the compression_level parameters we set in the constructor!
+        size_t ret = ZSTD_CCtx_reset(cctx, ZSTD_reset_session_only);
+
+        if (ZSTD_isError(ret)) {
+            throw runtime_error(string("Error : Failed to reset ZSTD context: ") + ZSTD_getErrorName(ret));
+        }
+    }
 }

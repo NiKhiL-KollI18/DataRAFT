@@ -56,4 +56,12 @@ namespace file_helper{
 
         return ss.str();
     }
+
+    void StreamingHasher::reset() {
+        // EVP_DigestInit_ex automatically resets an existing context cleanly
+        if (EVP_DigestInit_ex(static_cast<EVP_MD_CTX*>(ctx) , EVP_sha256() , nullptr ) != 1) {
+            throw runtime_error("Error : Failed to reset SHA256 context");
+        }
+        is_finalised_ = false;
+    }
 }

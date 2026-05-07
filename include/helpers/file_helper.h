@@ -22,7 +22,7 @@ namespace file_helper {
 
         std::string calculate_sha256(const std::string &filepath , const std::function<void(size_t , size_t)> &progress_callback);
 
-        bool is_compressible(const std::string &extension);
+        bool is_compressible(std::string extension);
 
         std::string sanitize_filename(const std::string &filepath);
 
@@ -45,6 +45,8 @@ namespace file_helper {
                 void update_hash(const std::vector<char>& chunk);
 
                 std::string get_sha256_hash();
+
+                void reset();
         };
 
         class StreamCompressor {
@@ -52,6 +54,9 @@ namespace file_helper {
                 StreamCompressor(int compression_level = 3);
                 ~StreamCompressor();
                 void compress_chunk(std::vector<char>&chunk , bool is_last_chunk);
+
+                void reset();
+
         private:
                 void* ctx;
                 std::vector<char> internal_buffer_;
@@ -62,6 +67,9 @@ namespace file_helper {
                 StreamDecompressor();
                 ~StreamDecompressor();
                 void decompress_chunk(std::vector<char>& chunk);
+
+                void reset();
+
         private:
                 void* ctx;
                 std::vector<char> internal_buffer_;

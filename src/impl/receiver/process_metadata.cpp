@@ -1,3 +1,4 @@
+#include <array>
 #include <filesystem>
 
 #include "receiver.h"
@@ -13,7 +14,7 @@ using ui = UIManager;
 
 void FileReceiver::process_metadata(const binary &data) {
     if (data.size() != sizeof(FileMeta)) {
-        raft_globals::shutdown(Level::ERROR , "Received invalid metadata size. Aborting transfer...");
+        raft_globals::shutdown(Level::ERR , "Received invalid metadata size. Aborting transfer...");
         send_ack(false, 0);
         return;
     }
@@ -24,23 +25,23 @@ void FileReceiver::process_metadata(const binary &data) {
     string raw_target_path = base_download_path_ + "/" + string(metadata_.relative_path_);
     string raw_raft_path = raw_target_path + ".raftpath";
 
-    //Safely create parent-dir from raw path instead.
+    //Safely create parent-dir from the raw path instead.
     std::error_code ec;
     fs::path raw_parent_dir = fs::path(raw_raft_path).parent_path();
 
     if (!raw_parent_dir.empty() && !fs::exists(raw_parent_dir, ec)) {
         fs::create_directories(raw_parent_dir, ec);
 
-        // Double check existance in case of weird OS drive-root permissions
+        // Double-check existence in case of weird OS drive-root permissions
         if (ec && !fs::exists(raw_parent_dir, ec)) {
-            raft_globals::shutdown(Level::ERROR , "Could not create directories: " + ec.message() + " : " + raw_parent_dir.string());
+            raft_globals::shutdown(Level::ERR , "Could not create directories: " + ec.message() + " : " + raw_parent_dir.string());
             send_ack(false, 0);
             return;
         }
     }
 
     // CONVERT TO WINDOWS LONG PATHS FOR FILE I/O
-    // so std::ofstream can bypass the 260 character limit!
+    // so std::ofstream can bypass the 260-character limit!
     final_filepath_ = file_helper::to_windows_long_path(raw_target_path);
     current_filepath_ = file_helper::to_windows_long_path(raw_raft_path);
 
@@ -97,10 +98,15 @@ void FileReceiver::process_metadata(const binary &data) {
     }
 
     //--3. Open file--
+    // Defensive check: ensure the stream is completely free before opening a new file!
+    if (outfile_.is_open()) {
+        outfile_.close();
+    }
+
     //if resuming open in appending mode, else truncate
     outfile_.open(current_filepath_ , ios::binary | (resume_block > 0 ? ios::app : ios::trunc));
     if (!outfile_.is_open()) {
-        raft_globals::shutdown(Level::ERROR , "Cannot open file for writing : " + current_filepath_);
+        raft_globals::shutdown(Level::ERR , "Cannot open file for writing : " + current_filepath_);
         send_ack(false, 0);
         return;
     }
@@ -111,10 +117,12 @@ void FileReceiver::process_metadata(const binary &data) {
     global_bytes_transferred_ += (resume_block * BLOCK_SIZE);
 
     //--4. REFORMERS--
-    hasher_.emplace();
+    if (!hasher_) hasher_.emplace();
+    hasher_->reset();
 
     if (metadata_.is_compressed_) {
-        decompressor_.emplace();
+        if (!decompressor_) decompressor_.emplace();
+        decompressor_->reset();
     }
 
     if (manifest_.is_encrypted_) {
@@ -123,8 +131,8 @@ void FileReceiver::process_metadata(const binary &data) {
 
         decryptor_->init_new_block(block_iv);
     }
-    total_bytes_received_ = resume_block * BLOCK_SIZE;
 
+    total_bytes_received_ = resume_block * BLOCK_SIZE;
 
     //initializing data receiver
     send_ack(true , resume_block);

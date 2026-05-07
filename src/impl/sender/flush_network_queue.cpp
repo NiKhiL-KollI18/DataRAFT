@@ -38,17 +38,17 @@ void Sender::flush_network_queue() {
         auto now = std::chrono::steady_clock::now();
         auto time_diff_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_speed_calc_time_).count();
 
-        // Recalculate speed every 500ms
+        // Recalculate speed and redraw UI every 500ms
         if (time_diff_ms >= 500) {
             current_speed_bps_ = static_cast<double>(bytes_sent_since_last_calc_) / (time_diff_ms / 1000.0);
 
             bytes_sent_since_last_calc_ = 0;
             last_speed_calc_time_ = now;
+
+            // ONLY call the UI function twice a second!
+            uint64_t current_file_num = total_files_in_batch_ - pending_files_.size();
+            ui::draw_progress_bar(global_bytes_transferred_ , data_manifest_.total_folder_size_ ,
+                current_file_num , total_files_in_batch_ , current_filepath_ , current_speed_bps_);
         }
-
-        uint64_t current_file_num = total_files_in_batch_ - pending_files_.size();
-
-        ui::draw_progress_bar(global_bytes_transferred_ , data_manifest_.total_folder_size_ ,
-            current_file_num , total_files_in_batch_ , current_filepath_ , current_speed_bps_);
     }
 }

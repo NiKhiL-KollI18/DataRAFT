@@ -96,6 +96,7 @@ add_library(dataraft_core SHARED
         src/impl/sender/start_sending.cpp
         src/impl/sender/producer.cpp
         src/impl/sender/flush_network_queue.cpp
+        src/impl/sender/load_next_batch_file.cpp
 
         #Receiver
         src/impl/receiver/receiver.cpp

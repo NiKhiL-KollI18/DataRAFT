@@ -8,7 +8,7 @@ using ui = UIManager;
 
 void FileReceiver::process_manifest(const binary &data) {
     if (data.size() != sizeof(DataManifest)) {
-        raft_globals::shutdown(Level::ERROR , "Received invalid manifest size. Aborting transfer.");
+        raft_globals::shutdown(Level::ERR , "Received invalid manifest size. Aborting transfer.");
         send_ack(false, 0);
         return;
     }
